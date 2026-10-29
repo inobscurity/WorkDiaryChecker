@@ -204,7 +204,7 @@
 
   function defaultTime(i) {
     const day = Math.floor(i / SLOTS_PER_DAY) + 1;
-    const minutes = (i % SLOTS_PER_DAY) * SLOT_MINUTES;
+    const minutes = (((i % SLOTS_PER_DAY) + SLOTS_PER_DAY) % SLOTS_PER_DAY) * SLOT_MINUTES;
     const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
     const mm = String(minutes % 60).padStart(2, '0');
     return `day ${day} ${hh}:${mm}`;
@@ -327,6 +327,7 @@
     const ruleset = RULESETS[rulesetId];
     if (!ruleset) throw new Error(`Unknown work option: ${rulesetId}`);
     const fmtTime = opts.fmtTime || defaultTime;
+    const prior = opts.prior || {};
     const n = slots.length;
     const work = slots.map((v) => v === 'W');
     let knownEnd = 0;
@@ -338,7 +339,7 @@
     }
     const restRuns = findRestRuns(work);
     const result = { ruleset, breaches: [], notes: [], longNight: new Set(), knownEnd };
-    if (!work.some(Boolean)) return result;
+    if (!work.some(Boolean) && !Object.keys(prior).length) return result;
 
     if (ruleset.rules.some((r) => r.maxLongNight != null)) {
       const rule24 = ruleset.rules.find((r) => r.period === H(24) && r.maxWork != null);
@@ -486,6 +487,31 @@
         result.breaches.push({ ...f, ruleId: rule.id, ruleLabel: label });
       }
 
+      // Work before the record, entered as a total for the days that make up the rest of the
+      // period. The period checked is the one ending with the record.
+      const key = priorKey(rule);
+      if (key && prior[key] != null && rule.period > n) {
+        const longNight = rule.maxLongNight != null;
+        const max = longNight ? rule.maxLongNight : rule.maxWork;
+        const before = prior[key];
+        let cum = before;
+        const over = [];
+        for (let i = 0; i < n; i++) {
+          const counts = longNight ? result.longNight.has(i) : work[i];
+          if (counts && ++cum > max) over.push(i);
+        }
+        if (cum > max) {
+          const amount = cum - max;
+          const start = n - rule.period;
+          result.breaches.push({
+            kind: longNight ? 'longnight' : 'work', start, end: n, amount, slots: over, prior: true,
+            ...riskOf(rule, 'work', amount, cum),
+            message: `${longNight ? 'Long/night work of' : 'Worked'} ${formatDuration(cum)} in the ${formatPeriod(rule.period)} from ${fmtTime(start)}, including ${formatDuration(before)} before the sheets — the limit is ${formatDuration(max)} (${formatDuration(amount)} over).`,
+            ruleId: rule.id, ruleLabel: label,
+          });
+        }
+      }
+
       const needsFullPeriod = rule.restBlocks || rule.restInBlocks || rule.nightRests;
       if (rule.period && needsFullPeriod && rule.period > knownEnd) {
         result.notes.push(
@@ -494,15 +520,27 @@
       }
     }
 
-    result.breaches.sort((a, b) => a.slots[0] - b.slots[0]);
+    // A breach that happened entirely before the record has no marked slots; list it first.
+    const at = (b) => (b.slots.length ? b.slots[0] : -1);
+    result.breaches.sort((a, b) => at(a) - at(b));
     return result;
+  }
+
+  // Which earlier-work total a rule uses: work for 7, 14 or 28 days, or BFM long/night work for
+  // 7 days. Null for rules that can't take one.
+  function priorKey(rule) {
+    if (!rule.period || rule.period < DAYS(7) || rule.period % SLOTS_PER_DAY) return null;
+    const days = rule.period / SLOTS_PER_DAY;
+    if (rule.maxLongNight != null) return `longnight-${days}`;
+    if (rule.maxWork != null) return `work-${days}`;
+    return null;
   }
 
   // How long the driver can keep working from slot `from`, rule by rule, if they work without a
   // break and then rest. For each rule that would be breached within the record, returns the
   // slot where work has to stop (`from` if continuing at all would breach it) and the kind of
   // breach: running out of work time, or running out of time to fit a required rest.
-  function plan(slots, rulesetId, from) {
+  function plan(slots, rulesetId, from, opts = {}) {
     const ruleset = RULESETS[rulesetId];
     const n = slots.length;
     if (from < 0 || from >= n) return [];
@@ -510,7 +548,7 @@
     const out = [];
     // A driver who is over a limit right now has to stop now, even if the period that was
     // breached has ended and a new one would allow more work.
-    const overNow = check(trial(0), rulesetId).breaches.filter((b) => b.slots.includes(from - 1));
+    const overNow = check(trial(0), rulesetId, opts).breaches.filter((b) => b.slots.includes(from - 1));
     for (const rule of ruleset.rules) {
       const current = overNow.find((b) => b.ruleId === rule.id);
       if (current) {
@@ -518,7 +556,7 @@
         continue;
       }
       // A breach caused by the extra work: it marks at least one of the new work slots.
-      const firstBreach = (k) => check(trial(k), rulesetId, { only: rule.id }).breaches
+      const firstBreach = (k) => check(trial(k), rulesetId, { ...opts, only: rule.id }).breaches
         .find((b) => b.slots.some((i) => i >= from && i < from + k));
       const last = firstBreach(n - from);
       if (!last) continue;
@@ -543,17 +581,17 @@
 
   // The earliest slot from `from` at which the driver can start work again without a breach,
   // resting until then, or -1 if there is none within the record.
-  function earliestStart(slots, rulesetId, from) {
+  function earliestStart(slots, rulesetId, from, opts = {}) {
     const n = slots.length;
     for (let t = Math.max(from, 0); t < n; t++) {
       const trial = slots.map((v, i) => (i < from ? v : i === t ? 'W' : 'R'));
-      if (!check(trial, rulesetId).breaches.some((b) => b.slots.includes(t))) return t;
+      if (!check(trial, rulesetId, opts).breaches.some((b) => b.slots.includes(t))) return t;
     }
     return -1;
   }
 
   return {
     SLOT_MINUTES, SLOTS_PER_DAY, RULESETS, H,
-    check, plan, earliestStart, windowStarts, findRestRuns, describeRule, formatDuration, formatPeriod, ruleLabel,
+    check, plan, earliestStart, priorKey, windowStarts, findRestRuns, describeRule, formatDuration, formatPeriod, ruleLabel,
   };
 });

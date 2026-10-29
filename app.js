@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, describeRule, formatDuration } = window.EWD;
+  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, priorKey, describeRule, formatDuration, formatPeriod } = window.EWD;
 
   const PAGES = 3;
   const N = PAGES * SLOTS_PER_DAY;
@@ -45,6 +45,8 @@
       changes: {},
       // Start of "Your next limits": null for the time now, or { date, time } the driver picked.
       planFrom: null,
+      // Earlier work typed in for the longer periods, as entered, keyed by rule (e.g. work-7).
+      prior: {},
     };
   }
 
@@ -91,7 +93,7 @@
   }
 
   function clock(i) {
-    const minutes = (i % SLOTS_PER_DAY) * SLOT_MINUTES;
+    const minutes = (((i % SLOTS_PER_DAY) + SLOTS_PER_DAY) % SLOTS_PER_DAY) * SLOT_MINUTES;
     return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
   }
 
@@ -374,7 +376,7 @@
   }
 
   function render(full) {
-    result = check(state.slots, state.ruleset, { fmtTime });
+    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots() });
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
@@ -428,6 +430,7 @@
     });
 
     if (full) {
+      renderEarlier();
       renderSummary();
       renderLimits(ruleset);
       renderPlanner();
@@ -572,7 +575,8 @@
 
     let slots = state.slots;
     let base = from;
-    let items = plan(slots, state.ruleset, from);
+    const opts = { prior: priorSlots() };
+    let items = plan(slots, state.ruleset, from, opts);
     const rows = [];
 
     // If no more work is allowed at the start time, say when it is, then plan from there.
@@ -581,7 +585,7 @@
       const d = describeRule(blocker.rule);
       const limit = blocker.kind === 'rest' || blocker.kind === 'night' ? d.rest : d.work.toLowerCase();
       const reason = `${d.period}: ${limit}.`;
-      const resume = earliestStart(slots, state.ruleset, from);
+      const resume = earliestStart(slots, state.ruleset, from, opts);
       if (resume < 0) {
         rows.push(row('over first', custom ? clock(from) : 'Now', '', blocker.overNow ? 'Over the limit: rest' : 'Rest',
           `No more work is allowed before the end of the last sheet. ${reason}`));
@@ -594,7 +598,7 @@
         `You can't start work again until ${clock(resume)}${day}. ${reason}`));
       slots = slots.map((v, i) => (i >= from && i < resume ? 'R' : v));
       base = resume;
-      items = plan(slots, state.ruleset, resume);
+      items = plan(slots, state.ruleset, resume, opts);
       if (items.length) rows.push(el('li', 'plan-then', `Then, if you work from ${clock(resume)} without a break:`));
     }
 
@@ -628,7 +632,8 @@
     selectedKey = b ? breachKey(b) : null;
     applySelection();
     if (b && reveal) {
-      const i = b.slots[0];
+      // A breach entirely before the sheets has no blocks of its own; show the first sheet.
+      const i = b.slots.length ? b.slots[0] : 0;
       const cell = sheets[Math.floor(i / SLOTS_PER_DAY)].cells.X[i % SLOTS_PER_DAY];
       cell.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
@@ -765,7 +770,7 @@
     const box = $('#summary');
     const hasWork = state.slots.includes('W');
     box.className = 'summary';
-    if (!hasWork) {
+    if (!hasWork && !result.breaches.length) {
       box.replaceChildren(el('p', 'summary-title', 'Mark work time on the sheets to check it.'));
       return;
     }
@@ -784,6 +789,14 @@
     const total = state.slots.filter((v) => v === 'W').length;
     const facts = [`Total work across the three sheets: ${formatDuration(total)}.`];
     if (result.longNight.size) facts.push(`Long/night work: ${formatDuration(result.longNight.size)}.`);
+    const prior = priorSlots();
+    for (const rule of RULESETS[state.ruleset].rules) {
+      const key = priorKey(rule);
+      if (key && prior[key] != null) {
+        const days = rule.period / SLOTS_PER_DAY;
+        facts.push(`${rule.maxLongNight != null ? 'Long/night work' : 'Work'} in the ${days - PAGES} days before: ${formatDuration(prior[key])}, checked against the ${days}-day limit.`);
+      }
+    }
     parts.push(el('p', 'facts', facts.join(' ')));
     if (result.notes.length) {
       const notes = el('ul', 'notes');
@@ -791,6 +804,92 @@
       parts.push(notes);
     }
     box.replaceChildren(...parts);
+  }
+
+  // ---- Work before the sheets --------------------------------------------------------------
+
+  // Hours as typed: "38", "38.5", "38,5" or "38:30". Work rounds up to the next 15 minutes, as in
+  // a written work diary. Null for an empty box, NaN for something that isn't hours.
+  function parseHours(text, maxHours) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    let hours = NaN;
+    let m = t.match(/^(\d+)(?:[.,](\d+))?$/);
+    if (m) hours = Number(`${m[1]}.${m[2] || 0}`);
+    m = t.match(/^(\d+):([0-5]\d)$/);
+    if (m) hours = Number(m[1]) + Number(m[2]) / 60;
+    if (!(hours >= 0) || hours > maxHours) return NaN;
+    return Math.ceil(hours * (60 / SLOT_MINUTES) - 1e-9);
+  }
+
+  // The rules of the current work option that take an earlier total.
+  function priorRules() {
+    return RULESETS[state.ruleset].rules.filter((rule) => priorKey(rule));
+  }
+
+  function priorSlots() {
+    const out = {};
+    for (const rule of priorRules()) {
+      const key = priorKey(rule);
+      const days = rule.period / SLOTS_PER_DAY - PAGES;
+      const slots = parseHours(state.prior[key], days * 24);
+      if (slots != null && !Number.isNaN(slots)) out[key] = slots;
+    }
+    return out;
+  }
+
+  let earlierBuiltFor = '';
+
+  // Rebuilt only when the work option or dates change, so typing in a box keeps its focus.
+  function renderEarlier() {
+    const section = $('#earlier');
+    const fields = $('#earlier-fields');
+    const rules = priorRules();
+    section.hidden = !rules.length;
+    const signature = `${state.ruleset}|${state.startDate}`;
+    if (signature !== earlierBuiltFor) {
+      earlierBuiltFor = signature;
+      fields.replaceChildren(...rules.map((rule) => {
+        const key = priorKey(rule);
+        const days = rule.period / SLOTS_PER_DAY - PAGES;
+        const longNight = rule.maxLongNight != null;
+        const d = describeRule(rule);
+        const field = el('div', 'earlier-field');
+        field.dataset.key = key;
+        const id = `earlier-${key}`;
+        const label = el('label', 'earlier-label', `${longNight ? 'Long/night work' : 'Work'} in the ${days} days before`);
+        label.htmlFor = id;
+        const dates = el('span', 'earlier-dates',
+          `${formatDate(pageDate(-days))} to ${formatDate(pageDate(-1))} · for the ${days + PAGES}-day limit (${d.work.toLowerCase()})`);
+        const row = el('span', 'earlier-input');
+        const input = el('input');
+        input.id = id;
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        input.placeholder = 'e.g. 38.5';
+        input.value = state.prior[key] || '';
+        input.addEventListener('input', () => {
+          state.prior = { ...state.prior, [key]: input.value };
+          update(true);
+        });
+        row.append(input, el('span', null, 'hours'));
+        const error = el('span', 'earlier-error', `Enter hours, like 38.5 or 38:30, up to ${days * 24}.`);
+        error.hidden = true;
+        field.append(label, dates, row, error);
+        if (longNight) {
+          field.append(el('span', 'earlier-help', 'Long/night work is work between midnight and 6am, plus work over 12 hours in any 24 hours.'));
+        }
+        return field;
+      }));
+    }
+    for (const field of fields.children) {
+      const key = field.dataset.key;
+      const rule = rules.find((r) => priorKey(r) === key);
+      const days = rule.period / SLOTS_PER_DAY - PAGES;
+      const bad = Number.isNaN(parseHours(state.prior[key], days * 24));
+      field.classList.toggle('invalid', bad);
+      field.querySelector('.earlier-error').hidden = !bad;
+    }
   }
 
   function renderLimits(ruleset) {

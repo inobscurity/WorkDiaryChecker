@@ -1,6 +1,6 @@
 // Keeps the checker working offline. Files are served from the cache first and refreshed in the
 // background, so a new version shows up on the next launch after it is published.
-const CACHE = 'work-diary-checker-v5';
+const CACHE = 'work-diary-checker-v6';
 const FILES = [
   './',
   'index.html',

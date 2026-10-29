@@ -208,6 +208,43 @@ const tests = {
     assert.deepEqual(windowStarts(runs, rule, slots.length), [0, H(29)]);
   },
 
+  'earlier work: 7-day limit counts the 4 days before the sheets plus the sheets'() {
+    // 30 hours on the sheets; 42 hours before is exactly 72, 42¼ is 15 minutes over.
+    const entries = [];
+    for (let d = 0; d < 3; d++) entries.push([d * 24 + 6, d * 24 + 11, 'W'], [d * 24 + 11.5, d * 24 + 16.5, 'W']);
+    const slots = record(entries);
+    assert.deepEqual(ids(check(slots, 'standard-solo', { prior: { 'work-7': H(42) } })), []);
+    const r = check(slots, 'standard-solo', { prior: { 'work-7': H(42.25) } });
+    assert.deepEqual(ids(r), ['std-7d']);
+    assert.equal(r.breaches[0].amount, 1);
+    assert.equal(r.breaches[0].severity, 'minor');
+    assert.equal(r.breaches[0].start, 3 * SLOTS_PER_DAY - 7 * SLOTS_PER_DAY);
+    // The last work block on the sheets is the one that goes over.
+    assert.deepEqual(r.breaches[0].slots, [H(64.5) - 1]);
+  },
+
+  'earlier work: a total already over the limit is a breach with no marked blocks'() {
+    const r = check(record([]), 'standard-solo', { prior: { 'work-14': H(150) } });
+    assert.deepEqual(ids(r), ['std-14d']);
+    assert.deepEqual(r.breaches[0].slots, []);
+    assert.equal(r.breaches[0].severity, 'critical');
+  },
+
+  'earlier work: BFM long/night total adds to night work on the sheets'() {
+    const slots = record([[0, 6, 'W'], [6, 24, 'R']]);
+    assert.deepEqual(ids(check(slots, 'bfm-solo', { prior: { 'longnight-7': H(30) } })), []);
+    const r = check(slots, 'bfm-solo', { prior: { 'longnight-7': H(31) } });
+    assert.deepEqual(ids(r), ['bfm-7d']);
+    assert.equal(r.breaches[0].kind, 'longnight');
+  },
+
+  'earlier work: the planner stops at the weekly limit'() {
+    const slots = record([[0, 6, 'R']]);
+    const p = plan(slots, 'standard-solo', H(6), { prior: { 'work-7': H(70) } });
+    assert.equal(p[0].rule.id, 'std-7d');
+    assert.equal(p[0].stopAt, H(8));
+  },
+
   'BFM counts night work towards the long/night limit'() {
     // Three nights of 00:00–06:00 work, each followed by a 5-hour day: 18 h of night work.
     const entries = [];
