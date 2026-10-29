@@ -179,6 +179,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .meta-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--diary); }
 .meta-value { font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive; color: var(--pen); font-size: 1.02rem; }
 .meta-input { border: 0; border-bottom: 1px dashed #b8c4c2; background: transparent; padding: 1px 0; color: var(--pen); font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive; font-size: 1.02rem; min-width: 0; }
+.date-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.meta-date {
+  border: 1px dashed #b8c4c2; border-radius: 4px; background: #fff; padding: 2px 6px;
+  color: var(--pen); font-size: 0.85rem; min-height: 32px; max-width: 100%;
+}
+.meta-date:focus { outline: 2px solid var(--diary); outline-offset: 1px; }
+.date-today {
+  border: 1px solid var(--diary); background: #fff; color: var(--diary); border-radius: 4px;
+  padding: 2px 8px; min-height: 32px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
 .meta-input:focus { outline: none; border-bottom-color: var(--diary); }
 .options { display: flex; gap: 12px; flex-wrap: wrap; font-family: inherit; font-size: 0.85rem; color: var(--ink); }
 .option { display: inline-flex; align-items: center; gap: 4px; }

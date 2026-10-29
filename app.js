@@ -142,15 +142,7 @@
       });
     }
 
-    // The date picker shows the middle sheet; the state keeps the first sheet's date.
-    const middle = $('#middle-date');
-    middle.value = addDays(state.startDate, 1);
-    middle.addEventListener('input', () => {
-      if (!middle.value) return;
-      state.startDate = addDays(middle.value, -1);
-      state.dateChosen = middle.value !== isoDate(new Date());
-      update(true);
-    });
+    watchMiddleDate($('#middle-date'));
 
     confirmButton($('#example'), 'Replace entries?', () => state.slots.includes('W'), loadExample);
     confirmButton($('#clear'), 'Tap again to clear', () => true, () => {
@@ -164,6 +156,34 @@
   }
 
   // Asks for a second tap instead of a dialog, so it also works where dialogs are blocked.
+  // The middle sheet's date can be set at the top or on the sheet itself; the other sheets are
+  // the day before and the day after. The state keeps the first sheet's date.
+  function setMiddleDate(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return;
+    state.startDate = addDays(iso, -1);
+    state.dateChosen = iso !== isoDate(new Date());
+    update(true);
+  }
+
+  function watchMiddleDate(input) {
+    input.value = addDays(state.startDate, 1);
+    // Some phone browsers only send "change" when the picker closes, others only "input".
+    const pick = () => {
+      if (input.value && input.value !== addDays(state.startDate, 1)) setMiddleDate(input.value);
+    };
+    input.addEventListener('input', pick);
+    input.addEventListener('change', pick);
+  }
+
+  function syncMiddleDate() {
+    const iso = addDays(state.startDate, 1);
+    document.querySelectorAll('.middle-date-input').forEach((input) => {
+      if (document.activeElement !== input) input.value = iso;
+    });
+    const today = $('#middle-today');
+    if (today) today.hidden = iso === isoDate(new Date());
+  }
+
   function confirmButton(button, question, needsConfirm, action) {
     const label = button.textContent;
     let timer = 0;
@@ -218,7 +238,22 @@
       state.pages[p].twoUp = twoUp.value;
       save();
     });
-    box('Day / date', date);
+    const dateBox = box('Day / date', date);
+    if (p === 1) {
+      // The middle sheet's date is changeable here; the other sheets follow it.
+      const edit = el('span', 'date-edit');
+      const input = el('input', 'middle-date-input meta-date');
+      input.type = 'date';
+      input.setAttribute('aria-label', 'Change the date of the middle sheet');
+      watchMiddleDate(input);
+      const today = el('button', 'date-today', 'Today');
+      today.type = 'button';
+      today.id = 'middle-today';
+      today.addEventListener('click', () => setMiddleDate(isoDate(new Date())));
+      edit.append(input, today);
+      dateBox.append(edit);
+      dateBox.classList.add('meta-box-date');
+    }
     box('Driver name', driver);
     box('Driver licence no.', licence);
     box('Work option', options);
@@ -417,6 +452,7 @@
 
       if (!full) return;
       s.date.textContent = formatDate(pageDate(p), true);
+      if (p === 1) syncMiddleDate();
       s.driver.textContent = state.driver || '—';
       s.licence.textContent = state.licence || '—';
       s.options.replaceChildren(...OPTIONS.map(([id, label]) => {
