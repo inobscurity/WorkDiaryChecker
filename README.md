@@ -9,7 +9,8 @@ the fatigue rules shows in red with its risk category.
 
 **Your next limits** shows, from the time now, when you'll have to stop if you keep working
 without a break: the next 15-minute break, the 12-hour daily limit, the latest time your 7-hour
-rest can start, and so on, with a countdown for each. **Tap a red BREACH bar** (or any breach in
+rest can start, and so on, with a countdown for each. Use **Plan from** to pick another
+day and time to plan a shift ahead, and **Time now** to go back to the current time. **Tap a red BREACH bar** (or any breach in
 a list) to see which rule was broken, the exact period it covers shaded on the sheets, and its
 risk category.
 

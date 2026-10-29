@@ -53,10 +53,18 @@
     <section id="planner" class="planner" aria-labelledby="planner-title">
       <div class="planner-head">
         <h2 id="planner-title">Your next limits</h2>
-        <p id="planner-lead" class="planner-lead"></p>
+        <div class="planner-from" role="group" aria-label="Plan from">
+          <span class="from-label">Plan from</span>
+          <button type="button" id="plan-now" class="from-now" aria-pressed="true">Time now</button>
+          <span class="from-or">or</span>
+          <select id="plan-day" aria-label="Start day"></select>
+          <input type="time" id="plan-time" step="900" aria-label="Start time">
+        </div>
       </div>
+      <p id="planner-lead" class="planner-lead"></p>
       <ol id="planner-list" class="planner-list"></ol>
-      <p class="planner-note">Worked out as if you keep working from now without a break, then rest.
+      <p class="planner-note">Worked out as if you work without a break from the start time, then rest.
+        Your entries before the start time are kept.
         A break of the length shown resets that limit. Plan your rest before you reach it, and stop
         sooner if you feel tired.</p>
     </section>

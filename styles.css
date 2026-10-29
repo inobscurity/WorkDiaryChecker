@@ -95,7 +95,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .planner { margin: 0 0 16px; padding: 14px 16px; background: #fff; border: 1px solid var(--paper-edge); border-radius: 8px; }
 .planner-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
 .planner h2 { margin: 0; font-size: 1.05rem; }
-.planner-lead { margin: 0; color: var(--muted); }
+.planner-lead { margin: 8px 0 0; color: var(--muted); }
+.planner-from { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.from-label { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.from-or { font-size: 0.85rem; color: var(--muted); }
+.planner-from select, .planner-from input {
+  padding: 6px 8px; min-height: 38px; border: 1px solid #b8c4c2; border-radius: 6px; background: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.from-now {
+  padding: 6px 12px; min-height: 38px; border-radius: 6px; border: 1px solid var(--diary);
+  background: #fff; color: var(--diary); font-weight: 600; cursor: pointer;
+}
+.from-now.active { background: var(--diary); color: #fff; }
 .planner-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .plan-item { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 10px; border-radius: 6px; background: var(--bg); }
 .plan-item.first { background: var(--diary-light); box-shadow: inset 4px 0 0 var(--diary); }
@@ -202,6 +214,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cell.row-X { background: transparent; border: 0; cursor: default; touch-action: auto; }
 .cell.row-X.on { background: var(--red); cursor: pointer; }
 .cell.row-X.on:hover { background: #8f0f14; }
+
+/* The start time picked for "Your next limits". */
+.cell.plan-start { box-shadow: inset 3px 0 0 var(--diary); }
+.cell.plan-start.now { box-shadow: inset 2px 0 0 var(--now), inset 5px 0 0 var(--diary); }
 
 /* The time now. */
 .cell.now { box-shadow: inset 2px 0 0 var(--now); }

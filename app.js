@@ -43,6 +43,8 @@
       pages: Array.from({ length: PAGES }, () => ({ rego: '', twoUp: '' })),
       slots: new Array(N).fill('R'),
       changes: {},
+      // Start of "Your next limits": null for the time now, or { date, time } the driver picked.
+      planFrom: null,
     };
   }
 
@@ -438,17 +440,73 @@
 
   function markNow() {
     const now = nowIndex();
+    const start = planStart();
+    const picked = start.custom ? start.from : -1;
     sheets.forEach((s, p) => {
       for (const row of ['W', 'R', 'X']) {
-        s.cells[row].forEach((c, q) => c.classList.toggle('now', p * SLOTS_PER_DAY + q === now));
+        s.cells[row].forEach((c, q) => {
+          c.classList.toggle('now', p * SLOTS_PER_DAY + q === now);
+          c.classList.toggle('plan-start', p * SLOTS_PER_DAY + q === picked);
+        });
       }
     });
   }
 
-  function planAction(item) {
+  // Where "Your next limits" starts: the day and time the driver picked, or the time now.
+  function planStart() {
+    if (state.planFrom) {
+      const day = [...Array(PAGES).keys()].findIndex((p) => isoDate(pageDate(p)) === state.planFrom.date);
+      const [hh, mm] = String(state.planFrom.time).split(':').map(Number);
+      if (day >= 0 && Number.isInteger(hh) && Number.isInteger(mm)) {
+        return { from: day * SLOTS_PER_DAY + Math.floor((hh * 60 + mm) / SLOT_MINUTES), custom: true };
+      }
+    }
+    return { from: nowIndex(), custom: false };
+  }
+
+  function buildPlanControls() {
+    const day = $('#plan-day');
+    const time = $('#plan-time');
+    const pick = () => {
+      if (!time.value) return;
+      state.planFrom = { date: day.value, time: time.value };
+      update(true);
+    };
+    day.addEventListener('change', pick);
+    time.addEventListener('change', pick);
+    $('#plan-now').addEventListener('click', () => {
+      state.planFrom = null;
+      update(true);
+    });
+  }
+
+  // Keeps the day and time pickers showing where the plan starts.
+  function syncPlanControls(from, custom) {
+    const day = $('#plan-day');
+    const time = $('#plan-time');
+    const todayIso = isoDate(new Date());
+    day.replaceChildren(...[...Array(PAGES).keys()].map((p) => {
+      const iso = isoDate(pageDate(p));
+      const opt = el('option', null, `${formatDate(pageDate(p))}${iso === todayIso ? ' (today)' : ''}`);
+      opt.value = iso;
+      return opt;
+    }));
+    const page = from >= 0 ? Math.floor(from / SLOTS_PER_DAY) : 1;
+    day.value = isoDate(pageDate(page));
+    if (document.activeElement !== time) {
+      time.value = custom ? state.planFrom.time : from >= 0 ? clock(from) : '';
+    }
+    const now = $('#plan-now');
+    now.setAttribute('aria-pressed', String(!custom));
+    now.classList.toggle('active', !custom);
+  }
+
+  function planAction(item, custom) {
     const { rule, kind } = item;
     const d = describeRule(rule);
-    if (item.overNow) return ['Rest now', `You are over this limit. ${d.period}: ${d.work.toLowerCase()}.`];
+    if (item.overNow) {
+      return [custom ? 'Rest first' : 'Rest now', `You are over this limit${custom ? ' at that time' : ''}. ${d.period}: ${d.work.toLowerCase()}.`];
+    }
     if (kind === 'rest' || kind === 'night') return ['Start your rest', `${d.period}: ${d.rest}.`];
     if (kind === 'longnight') return ['Long/night work limit', `${d.period}: ${d.work.toLowerCase()}.`];
     if (kind === 'between') return ['Stop for a 24-hour rest', `${d.period}: ${d.work.toLowerCase()}.`];
@@ -460,34 +518,44 @@
   function renderPlanner() {
     const lead = $('#planner-lead');
     const list = $('#planner-list');
-    const from = nowIndex();
+    const { from, custom } = planStart();
+    syncPlanControls(from, custom);
     if (from < 0) {
-      lead.textContent = "Today isn't on the sheets. Set the middle sheet to today's date to see your next limits.";
+      lead.textContent = "Today isn't on the sheets. Pick a start day and time above, or set the middle sheet to today's date.";
       list.replaceChildren();
       return;
     }
     const now = new Date();
     const working = state.slots[from] === 'W';
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    lead.textContent = `It's ${time}${working ? ' and you are on work' : ''}. If you work from now without a break:`;
+    if (custom) {
+      lead.textContent = `From ${fmtTime(from)}${working ? ', where you are marked on work' : ''}, if you work without a break:`;
+    } else {
+      const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      lead.textContent = `It's ${time}${working ? ' and you are on work' : ''}. If you work from now without a break:`;
+    }
     const items = plan(state.slots, state.ruleset, from);
     if (!items.length) {
-      list.replaceChildren(el('li', 'plan-item plan-clear', "No limit is reached before the end of tomorrow's sheet."));
+      list.replaceChildren(el('li', 'plan-item plan-clear', 'No limit is reached before the end of the last sheet.'));
       return;
     }
-    const nowPage = Math.floor(from / SLOTS_PER_DAY);
+    const startPage = Math.floor(from / SLOTS_PER_DAY);
+    const duration = (minutes) => (minutes < 60
+      ? `${minutes} min`
+      : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`);
     list.replaceChildren(...items.map((item, k) => {
-      const [action, detail] = planAction(item);
+      const [action, detail] = planAction(item, custom);
       const li = el('li', `plan-item${k === 0 ? ' first' : ''}${item.overNow ? ' over' : ''}`);
       const when = el('div', 'plan-when');
       const page = Math.floor(item.stopAt / SLOTS_PER_DAY);
       if (item.overNow) {
-        when.append(el('strong', 'plan-time', 'Now'));
+        when.append(el('strong', 'plan-time', custom ? clock(from) : 'Now'));
       } else {
         when.append(el('strong', 'plan-time', clock(item.stopAt)));
-        const minutes = Math.max(0, Math.round((slotDate(item.stopAt) - now) / 60000));
-        const left = minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
-        when.append(el('span', 'plan-left', `${page !== nowPage ? `${formatDate(pageDate(page))} · ` : ''}in ${left}`));
+        // From the time now, count down; from a picked time, say how long after it.
+        const left = custom
+          ? `after ${duration((item.stopAt - from) * SLOT_MINUTES)}`
+          : `in ${duration(Math.max(0, Math.round((slotDate(item.stopAt) - now) / 60000)))}`;
+        when.append(el('span', 'plan-left', `${page !== startPage ? `${formatDate(pageDate(page))} · ` : ''}${left}`));
       }
       const text = el('div', 'plan-text');
       text.append(el('strong', null, action), el('span', null, detail));
@@ -696,6 +764,7 @@
   }
 
   buildControls();
+  buildPlanControls();
   buildDetail();
   for (let p = 0; p < PAGES; p++) buildSheet(p);
   if (saved) update(true);
