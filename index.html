@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Work Diary Checker</title>
+  <meta name="description" content="Check NHVL work diary entries against Standard Hours and BFM work and rest limits, in 15-minute blocks.">
+  <meta name="theme-color" content="#0d6b67">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Diary Check">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="wrap">
+      <h1>Work Diary Compliance Checker</h1>
+      <p>Mark work and rest on the three daily sheets below, in 15-minute blocks, the way you would in a
+        National Driver Work Diary. Breaches of the selected work option show in red.</p>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="controls" aria-label="Diary details">
+      <label class="field field-wide">
+        <span>Work option</span>
+        <select id="ruleset"></select>
+      </label>
+      <label class="field">
+        <span>Date of middle sheet</span>
+        <input type="date" id="middle-date">
+      </label>
+      <label class="field">
+        <span>Driver name</span>
+        <input type="text" id="driver" autocomplete="name">
+      </label>
+      <label class="field">
+        <span>Driver licence no.</span>
+        <input type="text" id="licence" autocomplete="off">
+      </label>
+      <div class="buttons">
+        <button type="button" id="example">Load example</button>
+        <button type="button" id="clear">Clear all</button>
+        <button type="button" id="print">Print</button>
+      </div>
+    </section>
+
+    <section id="summary" class="summary" aria-live="polite"></section>
+
+    <details class="limits" open>
+      <summary>Work and rest limits for <span id="limits-name"></span></summary>
+      <p class="source">Source: <span id="limits-source"></span>.</p>
+      <p id="caution-two-up" class="caution" hidden>
+        Enter rest in an approved sleeper berth as rest. Rest in the sleeper berth of a stationary
+        vehicle is stationary rest. Under Standard Hours, only the 24-hour rest can be taken in a
+        sleeper berth while the vehicle is moving, and the NHVR recommends doing that only before
+        the major rest break.
+      </p>
+      <p id="caution-alternative" class="caution" hidden>
+        BFM accreditation granted before 1 August 2026 stays in force until it expires, is cancelled,
+        or the operator moves to Heavy Vehicle Accreditation. New operators use Alternative Compliance
+        Hours (ACH), which are set on each operator's certificate and are not checked here. Risk
+        categories follow Schedule 2 of the regulation, including escalated risk for more than 15½
+        hours work in 24 hours.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Time period</th><th>Maximum work</th><th>Minimum rest</th><th>Risk category if work is over</th></tr></thead>
+          <tbody id="limits-body"></tbody>
+        </table>
+      </div>
+    </details>
+
+    <p class="hint">
+      <strong>How to enter time:</strong> each sheet starts as rest all day. Drag your finger or mouse
+      along the top <b>WORK</b> row to change that time to work, and along the bottom <b>REST</b> row to
+      change it back to rest. Each box is 15 minutes. The middle sheet is today. On a phone, scroll a
+      sheet sideways by dragging the hour numbers.
+    </p>
+
+    <main id="sheets"></main>
+
+    <footer class="footer">
+      <p>Times are in the time zone of the driver's base. Periods are counted forward from the end of
+        each relevant rest break; time before the first sheet counts as rest. Rest requirements are
+        only checked for periods that end within the three sheets.</p>
+      <p>This is a guide only. Always check the current requirements with the National Heavy Vehicle
+        Regulator (NHVR). AFM hours and Alternative Compliance Hours (ACH) are set on each operator's
+        certificate and are not checked here.</p>
+    </footer>
+  </div>
+
+  <script src="rules.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
