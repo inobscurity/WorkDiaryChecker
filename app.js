@@ -148,7 +148,9 @@
     confirmButton($('#clear'), 'Tap again to clear', () => true, () => {
       state.slots = new Array(N).fill('R');
       state.changes = {};
+      state.prior = {};
       state.example = false;
+      clearEarlierBoxes();
       update(true);
     });
     const print = $('#print');
@@ -387,7 +389,9 @@
     days.forEach((entries, d) => entries.forEach(([from, to, v]) => set(d, from, to, v)));
     state.slots = slots;
     state.changes = {};
+    state.prior = {};
     state.example = true;
+    clearEarlierBoxes();
     update(true);
   }
 
@@ -876,6 +880,13 @@
 
   let earlierBuiltFor = '';
 
+  // The boxes are only rebuilt when the work option or dates change, so empty them directly.
+  function clearEarlierBoxes() {
+    document.querySelectorAll('#earlier-fields input').forEach((input) => {
+      input.value = '';
+    });
+  }
+
   // Rebuilt only when the work option or dates change, so typing in a box keeps its focus.
   function renderEarlier() {
     const section = $('#earlier');
@@ -911,13 +922,20 @@
         row.append(input, el('span', null, 'hours'));
         const error = el('span', 'earlier-error', `Enter hours, like 38.5 or 38:30, up to ${days * 24}.`);
         error.hidden = true;
-        field.append(label, dates, row, error);
+        const warning = el('span', 'earlier-error earlier-warning');
+        warning.hidden = true;
+        field.append(label, dates, row, error, warning);
         if (longNight) {
           field.append(el('span', 'earlier-help', 'Long/night work is work between midnight and 6am, plus work over 12 hours in any 24 hours.'));
         }
         return field;
       }));
     }
+    // Each total is only used for its own period, so they are never added together. A longer
+    // period's days include the shorter one's, so its total can't be smaller.
+    const totals = priorSlots();
+    const workKeys = Object.keys(totals).filter((k) => k.startsWith('work-'))
+      .sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1]));
     for (const field of fields.children) {
       const key = field.dataset.key;
       const rule = rules.find((r) => priorKey(r) === key);
@@ -925,6 +943,14 @@
       const bad = Number.isNaN(parseHours(state.prior[key], days * 24));
       field.classList.toggle('invalid', bad);
       field.querySelector('.earlier-error').hidden = !bad;
+      const warning = field.querySelector('.earlier-warning');
+      const shorter = workKeys.filter((k) => k !== key && Number(k.split('-')[1]) < Number(key.split('-')[1]))
+        .find((k) => totals[key] != null && totals[k] > totals[key]);
+      warning.hidden = !shorter;
+      if (shorter) {
+        const shorterDays = Number(shorter.split('-')[1]) - 2;
+        warning.textContent = `These ${days} days include the ${shorterDays} days above (${formatDuration(totals[shorter])}), so this total should be at least that.`;
+      }
     }
   }
 

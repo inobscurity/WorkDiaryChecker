@@ -224,6 +224,18 @@ const tests = {
     assert.deepEqual(r.breaches[0].slots, [H(24 + 16.5) - 1]);
   },
 
+  'earlier work: the 5-day and 12-day totals are checked separately, never added together'() {
+    // 20 hours on the first two sheets. 52 + 20 = 72 for 7 days, 124 + 20 = 144 for 14 days:
+    // both exactly at the limit. Added together they would be far over.
+    const slots = record([[6, 11, 'W'], [11.5, 16.5, 'W'], [30, 35, 'W'], [35.5, 40.5, 'W']]);
+    const both = { 'work-7': H(52), 'work-14': H(124) };
+    assert.deepEqual(ids(check(slots, 'standard-solo', { prior: both })), []);
+    // Each total only affects its own period.
+    const r = check(slots, 'standard-solo', { prior: { 'work-7': H(52), 'work-14': H(125) } });
+    assert.deepEqual(ids(r), ['std-14d']);
+    assert.equal(r.breaches[0].amount, H(1));
+  },
+
   'earlier work: a total already over the limit is a breach with no marked blocks'() {
     const r = check(record([]), 'standard-solo', { prior: { 'work-14': H(150) } });
     assert.deepEqual(ids(r), ['std-14d']);
