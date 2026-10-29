@@ -33,6 +33,7 @@
   // Rule fields:
   //   period        length of the "in any period of" window, in slots
   //   relevantRest  a window starts at the end of every rest break at least this long
+  //   relevantNight a window also starts at the end of every night rest break
   //   maxWork       maximum work in the window
   //   workRisk      upper bounds of minor, substantial and severe risk for work over the limit
   //   restBlocks    { length, count }: required continuous rest blocks inside the window
@@ -77,7 +78,7 @@
         ...SHORT_PERIODS('std', 'Sch 1 Table 1'),
         { id: 'std-24h', period: H(24), relevantRest: H(7), maxWork: H(12), workRisk: RISK_DAY, restBlocks: { length: H(7), count: 1 }, restText: '7 continuous hours stationary rest' },
         { id: 'std-7d', period: DAYS(7), relevantRest: H(24), maxWork: H(72), workRisk: RISK_WEEKS, restBlocks: { length: H(24), count: 1 }, restText: '24 continuous hours stationary rest' },
-        { id: 'std-14d', period: DAYS(14), relevantRest: H(24), maxWork: H(144), workRisk: RISK_WEEKS, nightRests: { count: 4, consecutive: true }, restText: '2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
+        { id: 'std-14d', period: DAYS(14), relevantNight: true, maxWork: H(144), workRisk: RISK_WEEKS, nightRests: { count: 4, consecutive: true }, restText: '2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
       ],
     },
     'standard-bus': {
@@ -87,7 +88,7 @@
       rules: [
         ...SHORT_PERIODS('bus', 'Sch 1 Table 2'),
         { id: 'bus-24h', period: H(24), relevantRest: H(7), maxWork: H(12), workRisk: RISK_DAY, restBlocks: { length: H(7), count: 1 }, restText: '7 continuous hours stationary rest' },
-        { id: 'bus-7d', period: DAYS(7), relevantRest: H(24), nightRests: { count: 6, consecutive: false }, restText: '6 night rest breaks' },
+        { id: 'bus-7d', period: DAYS(7), relevantNight: true, nightRests: { count: 6, consecutive: false }, restText: '6 night rest breaks' },
         { id: 'bus-28d', period: DAYS(28), relevantRest: H(24), maxWork: H(288), workRisk: RISK_WEEKS, restBlocks: { length: H(24), count: 4 }, restText: '4 blocks of 24 continuous hours stationary rest' },
       ],
     },
@@ -101,7 +102,7 @@
         { id: 'std2-24h', period: H(24), relevantRest: H(5), maxWork: H(12), workRisk: RISK_DAY, restBlocks: { length: H(5), count: 1 }, restText: '5 continuous hours stationary rest, or 5 continuous hours rest in an approved sleeper berth while the vehicle is moving' },
         { id: 'std2-52h', period: H(52), relevantRest: H(10), restBlocks: { length: H(10), count: 1 }, restText: '10 continuous hours stationary rest' },
         { id: 'std2-7d', period: DAYS(7), relevantRest: H(24), maxWork: H(60), workRisk: RISK_WEEKS, restBlocks: { length: H(24), count: 1 }, restInBlocks: { block: H(7), total: H(24) }, restText: '24 continuous hours stationary rest, and another 24 hours stationary rest in blocks of at least 7 continuous hours' },
-        { id: 'std2-14d', period: DAYS(14), relevantRest: H(24), maxWork: H(120), workRisk: RISK_WEEKS, nightRests: { count: 4, consecutive: true }, restText: '2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
+        { id: 'std2-14d', period: DAYS(14), relevantNight: true, maxWork: H(120), workRisk: RISK_WEEKS, nightRests: { count: 4, consecutive: true }, restText: '2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
       ],
     },
     'bfm-solo': {
@@ -115,7 +116,7 @@
         { id: 'bfm-12h', period: H(12), relevantRest: 1, maxWork: H(11), workRisk: RISK_DAY, restText: '60 minutes rest in blocks of 15 continuous minutes' },
         { id: 'bfm-24h', period: H(24), relevantRest: H(7), maxWork: H(14), workRisk: RISK_DAY, restBlocks: { length: H(7), count: 1 }, escalated: { maxWork: H(15.5), restLength: H(7) }, restText: '7 continuous hours stationary rest' },
         { id: 'bfm-7d', period: DAYS(7), relevantRest: H(24), maxLongNight: H(36), workRisk: RISK_WEEKS, workText: 'Max 36 hours long/night work', restText: 'No limit has been set' },
-        { id: 'bfm-14d', period: DAYS(14), relevantRest: H(24), maxWork: H(144), workRisk: RISK_WEEKS, escalated: { maxWork: H(154) }, restBlocks: { length: H(24), count: 2 }, nightRests: { count: 4, consecutive: true }, restText: '24 continuous hours stationary rest taken after no more than 84 hours work, and 24 continuous hours stationary rest, and 2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
+        { id: 'bfm-14d', period: DAYS(14), relevantRest: H(24), relevantNight: true, maxWork: H(144), workRisk: RISK_WEEKS, escalated: { maxWork: H(154) }, restBlocks: { length: H(24), count: 2 }, nightRests: { count: 4, consecutive: true }, restText: '24 continuous hours stationary rest taken after no more than 84 hours work, and 24 continuous hours stationary rest, and 2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
         { id: 'bfm-84h', label: 'Between 24-hour rest breaks', period: DAYS(7), betweenRests: { rest: H(24), maxWork: H(84) }, workRisk: RISK_WEEKS, workText: 'Max 84 hours work', restText: '24 continuous hours stationary rest' },
       ],
     },
@@ -126,10 +127,10 @@
       alternative: true,
       twoUp: true,
       rules: [
-        { id: 'bfm2-24h', period: H(24), relevantRest: H(5), maxWork: H(14), workRisk: RISK_DAY, escalated: { maxWork: H(15.5) }, restText: 'No limit has been set' },
+        { id: 'bfm2-24h', period: H(24), relevantRest: 1, maxWork: H(14), workRisk: RISK_DAY, escalated: { maxWork: H(15.5) }, restText: 'No limit has been set' },
         { id: 'bfm2-82h', period: H(82), relevantRest: H(10), restBlocks: { length: H(10), count: 1 }, restText: '10 continuous hours stationary rest' },
         { id: 'bfm2-7d', period: DAYS(7), relevantRest: H(24), maxWork: H(70), workRisk: RISK_WEEKS, restBlocks: { length: H(24), count: 1 }, restInBlocks: { block: H(7), total: H(24) }, restText: '24 continuous hours stationary rest, and another 24 hours stationary rest in blocks of at least 7 continuous hours' },
-        { id: 'bfm2-14d', period: DAYS(14), relevantRest: H(24), maxWork: H(140), workRisk: RISK_WEEKS, escalated: { maxWork: H(154) }, nightRests: { count: 4, consecutive: false }, restText: '4 night rest breaks' },
+        { id: 'bfm2-14d', period: DAYS(14), relevantNight: true, maxWork: H(140), workRisk: RISK_WEEKS, escalated: { maxWork: H(154) }, nightRests: { count: 4, consecutive: false }, restText: '4 night rest breaks' },
       ],
     },
   };
@@ -223,28 +224,46 @@
     return runs;
   }
 
-  // Time periods are counted forward from the end of each relevant rest break. Time before the
-  // record counts as rest, so the first work in the record also starts a period. If a period
-  // passes with no relevant rest break, the next one starts where it ended.
+  // A night rest break: 7 continuous hours rest between 10pm and 8am, or 24 continuous hours.
+  function isNightRest(run) {
+    if (run.end - run.start >= H(24)) return true;
+    for (let d = Math.floor(run.start / SLOTS_PER_DAY) - 1; d * SLOTS_PER_DAY <= run.end; d++) {
+      const a = d * SLOTS_PER_DAY + NIGHT_REST_FROM;
+      const b = d * SLOTS_PER_DAY + NIGHT_REST_TO;
+      if (Math.min(run.end, b) - Math.max(run.start, a) >= NIGHT_REST_LENGTH) return true;
+    }
+    return false;
+  }
+
+  // Following the NHVR "Counting time" rules, periods are counted forward from the end of a
+  // relevant rest break: any rest break for periods under 24 hours, and for longer periods the
+  // major rest break required for that period (for example 7 hours for 24 hours, a night rest
+  // break for 14 days). A later relevant rest break inside a period does not end that period.
+  // Time before the record counts as rest, so the first work also starts a period. If a period
+  // ends without the required rest break, later periods are counted from the end of any rest
+  // break, and from where the previous period ended.
   function windowStarts(restRuns, rule, n) {
+    const relevant = (run) => run.start === 0 ||
+      (rule.relevantRest != null && run.end - run.start >= rule.relevantRest) ||
+      (rule.relevantNight && isNightRest(run));
     const starts = new Set();
     if (!restRuns.length || restRuns[0].start > 0) starts.add(0);
     for (const run of restRuns) {
-      if (run.end < n && (run.start === 0 || run.end - run.start >= rule.relevantRest)) starts.add(run.end);
+      if (run.end < n && relevant(run)) starts.add(run.end);
     }
     const sorted = [...starts].sort((a, b) => a - b);
-    if (!sorted.length) return [];
-    const out = [];
+    const out = new Set();
     for (let k = 0; k < sorted.length; k++) {
-      let s = sorted[k];
-      out.push(s);
+      const s = sorted[k];
+      out.add(s);
       const next = k + 1 < sorted.length ? sorted[k + 1] : n;
-      while (s + rule.period < next) {
-        s += rule.period;
-        out.push(s);
+      if (s + rule.period >= next) continue;
+      for (let t = s + rule.period; t < next; t += rule.period) out.add(t);
+      for (const run of restRuns) {
+        if (run.end >= s + rule.period && run.end < next) out.add(run.end);
       }
     }
-    return out;
+    return [...out].sort((a, b) => a - b);
   }
 
   function longestRestIn(restRuns, from, to) {
@@ -522,8 +541,19 @@
     return out.sort((a, b) => a.stopAt - b.stopAt);
   }
 
+  // The earliest slot from `from` at which the driver can start work again without a breach,
+  // resting until then, or -1 if there is none within the record.
+  function earliestStart(slots, rulesetId, from) {
+    const n = slots.length;
+    for (let t = Math.max(from, 0); t < n; t++) {
+      const trial = slots.map((v, i) => (i < from ? v : i === t ? 'W' : 'R'));
+      if (!check(trial, rulesetId).breaches.some((b) => b.slots.includes(t))) return t;
+    }
+    return -1;
+  }
+
   return {
     SLOT_MINUTES, SLOTS_PER_DAY, RULESETS, H,
-    check, plan, describeRule, formatDuration, formatPeriod, ruleLabel,
+    check, plan, earliestStart, windowStarts, findRestRuns, describeRule, formatDuration, formatPeriod, ruleLabel,
   };
 });

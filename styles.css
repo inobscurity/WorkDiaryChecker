@@ -118,6 +118,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .plan-item { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 10px; border-radius: 6px; background: var(--bg); }
 .plan-item.first { background: var(--diary-light); box-shadow: inset 4px 0 0 var(--diary); }
 .plan-item.over { background: var(--red-light); box-shadow: inset 4px 0 0 var(--red); }
+.plan-then { margin: 4px 0 0; font-size: 0.88rem; color: var(--muted); }
 .plan-item.plan-clear { display: block; color: var(--green); background: var(--green-light); }
 .plan-when { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
 .plan-time { font-size: 1.35rem; line-height: 1.1; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }

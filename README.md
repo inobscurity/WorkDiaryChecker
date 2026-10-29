@@ -35,6 +35,13 @@ Regulation, current as at 1 August 2026 (Schedules 1 and 2). BFM hours come from
 "Work and rest hours" page for operators whose BFM accreditation is still in force. AFM hours and
 Alternative Compliance Hours (ACH) are set on each operator's certificate and are not checked.
 
+Time is counted as on the NHVR "Counting time" page: periods under 24 hours from the end of any
+rest break; longer periods from the end of the major rest break that period requires (7 hours for
+24 hours, 24 hours for 7 days, a night rest break for 14 days, and so on), or from the end of any
+rest break if it hasn't been taken. A later major rest break inside a 24-hour period does not
+reset it, so the tests include the NHVR's worked example (12 hours by 7:45pm means no work until
+6:00am).
+
 All limits are in `RULESETS` in `rules.js`.
 
 This is a guide only. Always check the current requirements with the National Heavy Vehicle

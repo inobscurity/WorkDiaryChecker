@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, describeRule, formatDuration } = window.EWD;
+  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, describeRule, formatDuration } = window.EWD;
 
   const PAGES = 3;
   const N = PAGES * SLOTS_PER_DAY;
@@ -547,35 +547,69 @@
       const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       lead.textContent = `It's ${time}${working ? ' and you are on work' : ''}. If you work from now without a break:`;
     }
-    const items = plan(state.slots, state.ruleset, from);
-    if (!items.length) {
-      list.replaceChildren(el('li', 'plan-item plan-clear', 'No limit is reached before the end of the last sheet.'));
-      return;
-    }
     const startPage = Math.floor(from / SLOTS_PER_DAY);
     const duration = (minutes) => (minutes < 60
       ? `${minutes} min`
       : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`);
-    list.replaceChildren(...items.map((item, k) => {
-      const [action, detail] = planAction(item, custom);
-      const li = el('li', `plan-item${k === 0 ? ' first' : ''}${item.overNow ? ' over' : ''}`);
+    // From the time now, count down; from a picked time, say how long after the start.
+    const whenText = (i, base) => {
+      const page = Math.floor(i / SLOTS_PER_DAY);
+      const left = custom
+        ? `after ${duration((i - base) * SLOT_MINUTES)}`
+        : `in ${duration(Math.max(0, Math.round((slotDate(i) - now) / 60000)))}`;
+      return `${page !== startPage ? `${formatDate(pageDate(page))} · ` : ''}${left}`;
+    };
+    const row = (cls, time, sub, action, detail) => {
+      const li = el('li', `plan-item ${cls}`);
       const when = el('div', 'plan-when');
-      const page = Math.floor(item.stopAt / SLOTS_PER_DAY);
-      if (item.overNow) {
-        when.append(el('strong', 'plan-time', custom ? clock(from) : 'Now'));
-      } else {
-        when.append(el('strong', 'plan-time', clock(item.stopAt)));
-        // From the time now, count down; from a picked time, say how long after it.
-        const left = custom
-          ? `after ${duration((item.stopAt - from) * SLOT_MINUTES)}`
-          : `in ${duration(Math.max(0, Math.round((slotDate(item.stopAt) - now) / 60000)))}`;
-        when.append(el('span', 'plan-left', `${page !== startPage ? `${formatDate(pageDate(page))} · ` : ''}${left}`));
-      }
+      when.append(el('strong', 'plan-time', time));
+      if (sub) when.append(el('span', 'plan-left', sub));
       const text = el('div', 'plan-text');
       text.append(el('strong', null, action), el('span', null, detail));
       li.append(when, text);
       return li;
-    }));
+    };
+
+    let slots = state.slots;
+    let base = from;
+    let items = plan(slots, state.ruleset, from);
+    const rows = [];
+
+    // If no more work is allowed at the start time, say when it is, then plan from there.
+    if (items.length && items[0].stopAt === from) {
+      const blocker = items[0];
+      const d = describeRule(blocker.rule);
+      const limit = blocker.kind === 'rest' || blocker.kind === 'night' ? d.rest : d.work.toLowerCase();
+      const reason = `${d.period}: ${limit}.`;
+      const resume = earliestStart(slots, state.ruleset, from);
+      if (resume < 0) {
+        rows.push(row('over first', custom ? clock(from) : 'Now', '', blocker.overNow ? 'Over the limit: rest' : 'Rest',
+          `No more work is allowed before the end of the last sheet. ${reason}`));
+        list.replaceChildren(...rows);
+        return;
+      }
+      const day = Math.floor(resume / SLOTS_PER_DAY) !== startPage ? ` on ${formatDate(pageDate(Math.floor(resume / SLOTS_PER_DAY)))}` : '';
+      rows.push(row('over first', clock(resume), whenText(resume, from),
+        blocker.overNow ? `Over the limit: rest until ${clock(resume)}` : `Rest until ${clock(resume)}`,
+        `You can't start work again until ${clock(resume)}${day}. ${reason}`));
+      slots = slots.map((v, i) => (i >= from && i < resume ? 'R' : v));
+      base = resume;
+      items = plan(slots, state.ruleset, resume);
+      if (items.length) rows.push(el('li', 'plan-then', `Then, if you work from ${clock(resume)} without a break:`));
+    }
+
+    if (!rows.length && !items.length) {
+      list.replaceChildren(el('li', 'plan-item plan-clear', 'No limit is reached before the end of the last sheet.'));
+      return;
+    }
+    items.forEach((item, k) => {
+      const [action, detail] = planAction(item, custom);
+      const first = !rows.length && k === 0;
+      rows.push(item.overNow
+        ? row(`over${first ? ' first' : ''}`, custom ? clock(base) : 'Now', '', action, detail)
+        : row(first ? 'first' : '', clock(item.stopAt), whenText(item.stopAt, base), action, detail));
+    });
+    list.replaceChildren(...rows);
   }
 
   // ---- Explaining a breach ------------------------------------------------------------------

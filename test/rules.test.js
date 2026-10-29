@@ -2,7 +2,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { check, plan, H, SLOTS_PER_DAY } = require('../rules.js');
+const { check, plan, earliestStart, windowStarts, findRestRuns, RULESETS, H, SLOTS_PER_DAY } = require('../rules.js');
 
 const DAYS = 3;
 
@@ -174,6 +174,38 @@ const tests = {
     const p = plan(slots, 'standard-solo', H(11.5));
     assert.equal(p[0].stopAt, H(11.5));
     assert.equal(p[0].overNow, true);
+  },
+
+  // The worked example on the NHVR "Counting time" page: start at 06:00, work 5¼ h, 15 min
+  // break, 2¼ h, 90 min break, 4½ h, then a 7-hour rest from 19:45 to 02:45.
+  'NHVR example: work at 02:45 still counts in the 24 hours from 06:00'() {
+    const day = [[0, 6, 'R'], [6, 11.25, 'W'], [11.25, 11.5, 'R'], [11.5, 13.75, 'W'], [13.75, 15.25, 'R'], [15.25, 19.75, 'W'], [19.75, 26.75, 'R']];
+    const r = check(record([...day, [26.75, 27.75, 'W'], [27.75, 48, 'R']]), 'standard-solo');
+    assert.deepEqual(ids(r), ['std-24h']);
+    assert.equal(r.breaches[0].start, H(6));
+    assert.equal(r.breaches[0].amount, H(1));
+  },
+
+  'NHVR example: starting again at 06:00 the next day is compliant'() {
+    const day = [[0, 6, 'R'], [6, 11.25, 'W'], [11.25, 11.5, 'R'], [11.5, 13.75, 'W'], [13.75, 15.25, 'R'], [15.25, 19.75, 'W'], [19.75, 30, 'R']];
+    const r = check(record([...day, [30, 35, 'W'], [35, 48, 'R']]), 'standard-solo');
+    assert.deepEqual(ids(r), []);
+  },
+
+  'NHVR example: the earliest the driver can start again is 06:00'() {
+    const slots = record([[0, 6, 'R'], [6, 11.25, 'W'], [11.25, 11.5, 'R'], [11.5, 13.75, 'W'], [13.75, 15.25, 'R'], [15.25, 19.75, 'W']]);
+    assert.equal(earliestStart(slots, 'standard-solo', H(19.75)), H(30));
+    assert.equal(plan(slots, 'standard-solo', H(19.75))[0].stopAt, H(19.75));
+  },
+
+  '14-day periods are counted from the end of a night rest break, not any 7-hour rest'() {
+    // A 7-hour rest in the day (10:00 to 17:00) and one overnight (22:00 to 05:00).
+    const slots = new Array(3 * SLOTS_PER_DAY).fill('W');
+    for (let i = H(10); i < H(17); i++) slots[i] = 'R';
+    for (let i = H(22); i < H(29); i++) slots[i] = 'R';
+    const runs = findRestRuns(slots.map((v) => v === 'W'));
+    const rule = RULESETS['standard-solo'].rules.find((r) => r.id === 'std-14d');
+    assert.deepEqual(windowStarts(runs, rule, slots.length), [0, H(29)]);
   },
 
   'BFM counts night work towards the long/night limit'() {
