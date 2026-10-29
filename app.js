@@ -794,7 +794,7 @@
       const key = priorKey(rule);
       if (key && prior[key] != null) {
         const days = rule.period / SLOTS_PER_DAY;
-        facts.push(`${rule.maxLongNight != null ? 'Long/night work' : 'Work'} in the ${days - PAGES} days before: ${formatDuration(prior[key])}, checked against the ${days}-day limit.`);
+        facts.push(`${rule.maxLongNight != null ? 'Long/night work' : 'Work'} in the ${days - 1} days before: ${formatDuration(prior[key])}, checked with the first sheet against the ${days}-day limit.`);
       }
     }
     parts.push(el('p', 'facts', facts.join(' ')));
@@ -831,7 +831,7 @@
     const out = {};
     for (const rule of priorRules()) {
       const key = priorKey(rule);
-      const days = rule.period / SLOTS_PER_DAY - PAGES;
+      const days = rule.period / SLOTS_PER_DAY - 1;
       const slots = parseHours(state.prior[key], days * 24);
       if (slots != null && !Number.isNaN(slots)) out[key] = slots;
     }
@@ -851,7 +851,7 @@
       earlierBuiltFor = signature;
       fields.replaceChildren(...rules.map((rule) => {
         const key = priorKey(rule);
-        const days = rule.period / SLOTS_PER_DAY - PAGES;
+        const days = rule.period / SLOTS_PER_DAY - 1;
         const longNight = rule.maxLongNight != null;
         const d = describeRule(rule);
         const field = el('div', 'earlier-field');
@@ -860,7 +860,7 @@
         const label = el('label', 'earlier-label', `${longNight ? 'Long/night work' : 'Work'} in the ${days} days before`);
         label.htmlFor = id;
         const dates = el('span', 'earlier-dates',
-          `${formatDate(pageDate(-days))} to ${formatDate(pageDate(-1))} · for the ${days + PAGES}-day limit (${d.work.toLowerCase()})`);
+          `${formatDate(pageDate(-days))} to ${formatDate(pageDate(-1))} · for the ${days + 1}-day limit with the first sheet (${d.work.toLowerCase()})`);
         const row = el('span', 'earlier-input');
         const input = el('input');
         input.id = id;
@@ -885,7 +885,7 @@
     for (const field of fields.children) {
       const key = field.dataset.key;
       const rule = rules.find((r) => priorKey(r) === key);
-      const days = rule.period / SLOTS_PER_DAY - PAGES;
+      const days = rule.period / SLOTS_PER_DAY - 1;
       const bad = Number.isNaN(parseHours(state.prior[key], days * 24));
       field.classList.toggle('invalid', bad);
       field.querySelector('.earlier-error').hidden = !bad;

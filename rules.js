@@ -487,26 +487,27 @@
         result.breaches.push({ ...f, ruleId: rule.id, ruleLabel: label });
       }
 
-      // Work before the record, entered as a total for the days that make up the rest of the
-      // period. The period checked is the one ending with the record.
+      // Work before the record, entered as a total for the days before the first day. With the
+      // first day they make up the period, so the period checked ends with the first day.
       const key = priorKey(rule);
-      if (key && prior[key] != null && rule.period > n) {
+      const firstDay = Math.min(n, SLOTS_PER_DAY);
+      if (key && prior[key] != null && rule.period > firstDay) {
         const longNight = rule.maxLongNight != null;
         const max = longNight ? rule.maxLongNight : rule.maxWork;
         const before = prior[key];
         let cum = before;
         const over = [];
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < firstDay; i++) {
           const counts = longNight ? result.longNight.has(i) : work[i];
           if (counts && ++cum > max) over.push(i);
         }
         if (cum > max) {
           const amount = cum - max;
-          const start = n - rule.period;
+          const start = firstDay - rule.period;
           result.breaches.push({
-            kind: longNight ? 'longnight' : 'work', start, end: n, amount, slots: over, prior: true,
+            kind: longNight ? 'longnight' : 'work', start, end: firstDay, amount, slots: over, prior: true,
             ...riskOf(rule, 'work', amount, cum),
-            message: `${longNight ? 'Long/night work of' : 'Worked'} ${formatDuration(cum)} in the ${formatPeriod(rule.period)} from ${fmtTime(start)}, including ${formatDuration(before)} before the sheets — the limit is ${formatDuration(max)} (${formatDuration(amount)} over).`,
+            message: `${longNight ? 'Long/night work of' : 'Worked'} ${formatDuration(cum)} in the ${formatPeriod(rule.period)} from ${fmtTime(start)}, including ${formatDuration(before)} before the first sheet — the limit is ${formatDuration(max)} (${formatDuration(amount)} over).`,
             ruleId: rule.id, ruleLabel: label,
           });
         }

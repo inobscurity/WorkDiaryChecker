@@ -208,19 +208,20 @@ const tests = {
     assert.deepEqual(windowStarts(runs, rule, slots.length), [0, H(29)]);
   },
 
-  'earlier work: 7-day limit counts the 4 days before the sheets plus the sheets'() {
-    // 30 hours on the sheets; 42 hours before is exactly 72, 42¼ is 15 minutes over.
+  'earlier work: the 7 days are the 6 days before plus the first sheet'() {
+    // 10 hours on each sheet; only the first sheet counts. 62 hours before is exactly 72.
     const entries = [];
     for (let d = 0; d < 3; d++) entries.push([d * 24 + 6, d * 24 + 11, 'W'], [d * 24 + 11.5, d * 24 + 16.5, 'W']);
     const slots = record(entries);
-    assert.deepEqual(ids(check(slots, 'standard-solo', { prior: { 'work-7': H(42) } })), []);
-    const r = check(slots, 'standard-solo', { prior: { 'work-7': H(42.25) } });
+    assert.deepEqual(ids(check(slots, 'standard-solo', { prior: { 'work-7': H(62) } })), []);
+    const r = check(slots, 'standard-solo', { prior: { 'work-7': H(62.25) } });
     assert.deepEqual(ids(r), ['std-7d']);
     assert.equal(r.breaches[0].amount, 1);
     assert.equal(r.breaches[0].severity, 'minor');
-    assert.equal(r.breaches[0].start, 3 * SLOTS_PER_DAY - 7 * SLOTS_PER_DAY);
-    // The last work block on the sheets is the one that goes over.
-    assert.deepEqual(r.breaches[0].slots, [H(64.5) - 1]);
+    assert.equal(r.breaches[0].start, SLOTS_PER_DAY - 7 * SLOTS_PER_DAY);
+    assert.equal(r.breaches[0].end, SLOTS_PER_DAY);
+    // The last work block on the first sheet is the one that goes over.
+    assert.deepEqual(r.breaches[0].slots, [H(16.5) - 1]);
   },
 
   'earlier work: a total already over the limit is a breach with no marked blocks'() {
