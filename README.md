@@ -14,9 +14,10 @@ day and time to plan a shift ahead, and **Time now** to go back to the current t
 a list) to see which rule was broken, the exact period it covers shaded on the sheets, and its
 risk category.
 
-**Work before these sheets** takes optional totals for the days before the first sheet (6 days
-for the 7-day limit, 13 for 14 days, 27 for 28 days, with the dates shown), plus long/night work
-for BFM's 36-hour limit. With the first sheet as the last day, they check the longer work limits.
+**Work before these sheets** takes optional totals for the days before the first sheet (5 days
+for the 7-day limit, 12 for 14 days, 26 for 28 days, with the dates shown), plus long/night work
+for BFM's 36-hour limit. With the first two sheets, ending with the middle sheet, they check the
+longer work limits, and Your next limits takes them into account.
 
 It runs in any modern browser, on a phone, tablet or computer. Entries stay on the device; nothing
 is sent anywhere.

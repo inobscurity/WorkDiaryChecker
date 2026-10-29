@@ -488,9 +488,10 @@
       }
 
       // Work before the record, entered as a total for the days before the first day. With the
-      // first day they make up the period, so the period checked ends with the first day.
+      // record's first `priorThrough` days (the first two sheets by default) they make up the
+      // period, so the period checked ends with the last of those days.
       const key = priorKey(rule);
-      const firstDay = Math.min(n, SLOTS_PER_DAY);
+      const firstDay = Math.min(n, (opts.priorThrough || 2) * SLOTS_PER_DAY);
       if (key && prior[key] != null && rule.period > firstDay) {
         const longNight = rule.maxLongNight != null;
         const max = longNight ? rule.maxLongNight : rule.maxWork;
@@ -507,7 +508,7 @@
           result.breaches.push({
             kind: longNight ? 'longnight' : 'work', start, end: firstDay, amount, slots: over, prior: true,
             ...riskOf(rule, 'work', amount, cum),
-            message: `${longNight ? 'Long/night work of' : 'Worked'} ${formatDuration(cum)} in the ${formatPeriod(rule.period)} from ${fmtTime(start)}, including ${formatDuration(before)} before the first sheet — the limit is ${formatDuration(max)} (${formatDuration(amount)} over).`,
+            message: `${longNight ? 'Long/night work of' : 'Worked'} ${formatDuration(cum)} in the ${formatPeriod(rule.period)} from ${fmtTime(start)}, including ${formatDuration(before)} before the sheets — the limit is ${formatDuration(max)} (${formatDuration(amount)} over).`,
             ruleId: rule.id, ruleLabel: label,
           });
         }
