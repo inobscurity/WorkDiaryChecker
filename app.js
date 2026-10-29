@@ -464,16 +464,32 @@
     return { from: nowIndex(), custom: false };
   }
 
+  // A dropdown of times rather than the browser's time picker, which some phone browsers only
+  // report changes from when it closes, and draws differently everywhere.
   function buildPlanControls() {
     const day = $('#plan-day');
     const time = $('#plan-time');
+    for (let q = 0; q < SLOTS_PER_DAY; q++) {
+      const opt = el('option', null, clock(q));
+      opt.value = clock(q);
+      time.append(opt);
+    }
     const pick = () => {
-      if (!time.value) return;
       state.planFrom = { date: day.value, time: time.value };
       update(true);
     };
-    day.addEventListener('change', pick);
-    time.addEventListener('change', pick);
+    for (const select of [day, time]) select.addEventListener('change', pick);
+
+    const step = (delta) => {
+      const { from } = planStart();
+      const start = from >= 0 ? from : SLOTS_PER_DAY;
+      const i = Math.min(N - 1, Math.max(0, start + delta));
+      state.planFrom = { date: isoDate(pageDate(Math.floor(i / SLOTS_PER_DAY))), time: clock(i) };
+      update(true);
+    };
+    $('#plan-earlier').addEventListener('click', () => step(-1));
+    $('#plan-later').addEventListener('click', () => step(1));
+
     $('#plan-now').addEventListener('click', () => {
       state.planFrom = null;
       update(true);
@@ -493,9 +509,7 @@
     }));
     const page = from >= 0 ? Math.floor(from / SLOTS_PER_DAY) : 1;
     day.value = isoDate(pageDate(page));
-    if (document.activeElement !== time) {
-      time.value = custom ? state.planFrom.time : from >= 0 ? clock(from) : '';
-    }
+    if (from >= 0 && document.activeElement !== time) time.value = clock(from);
     const now = $('#plan-now');
     now.setAttribute('aria-pressed', String(!custom));
     now.classList.toggle('active', !custom);

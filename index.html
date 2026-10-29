@@ -57,8 +57,14 @@
           <span class="from-label">Plan from</span>
           <button type="button" id="plan-now" class="from-now" aria-pressed="true">Time now</button>
           <span class="from-or">or</span>
-          <select id="plan-day" aria-label="Start day"></select>
-          <input type="time" id="plan-time" step="900" aria-label="Start time">
+          <span class="from-pick">
+            <select id="plan-day" aria-label="Start day"></select>
+            <select id="plan-time" aria-label="Start time"></select>
+          </span>
+          <span class="from-step">
+            <button type="button" id="plan-earlier" aria-label="15 minutes earlier">−15 min</button>
+            <button type="button" id="plan-later" aria-label="15 minutes later">+15 min</button>
+          </span>
         </div>
       </div>
       <p id="planner-lead" class="planner-lead"></p>

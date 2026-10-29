@@ -99,10 +99,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .planner-from { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .from-label { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .from-or { font-size: 0.85rem; color: var(--muted); }
-.planner-from select, .planner-from input {
+.planner-from select {
   padding: 6px 8px; min-height: 38px; border: 1px solid #b8c4c2; border-radius: 6px; background: #fff;
   font-variant-numeric: tabular-nums;
 }
+.from-pick, .from-step { display: inline-flex; gap: 6px; }
+.from-step button {
+  padding: 6px 10px; min-height: 38px; border-radius: 6px; border: 1px solid #b8c4c2;
+  background: #fff; color: var(--ink); font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.from-step button:hover { background: var(--diary-light); }
 .from-now {
   padding: 6px 12px; min-height: 38px; border-radius: 6px; border: 1px solid var(--diary);
   background: #fff; color: var(--diary); font-weight: 600; cursor: pointer;
