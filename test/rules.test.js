@@ -2,7 +2,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { check, H, SLOTS_PER_DAY } = require('../rules.js');
+const { check, plan, H, SLOTS_PER_DAY } = require('../rules.js');
 
 const DAYS = 3;
 
@@ -140,6 +140,40 @@ const tests = {
     const r = check(slots, 'bfm-two-up');
     assert.deepEqual([...new Set(ids(r))], ['bfm2-82h']);
     assert.equal(r.breaches[0].amount, H(0.5));
+  },
+
+  'plan: starting fresh at 06:00, the first stop is a break at 11:15'() {
+    const p = plan(record([[0, 6, 'R']]), 'standard-solo', H(6));
+    assert.equal(p[0].label, 'In any 5½ hours');
+    assert.equal(p[0].stopAt, H(11.25));
+    assert.equal(p[0].kind, 'work');
+  },
+
+  'plan: after 11 hours work today, the 12-hour limit comes before the next break'() {
+    const slots = record([
+      [0, 6, 'R'], [6, 11, 'W'], [11, 11.5, 'R'], [11.5, 16.5, 'W'], [16.5, 17, 'R'], [17, 18, 'W'],
+    ]);
+    const p = plan(slots, 'standard-solo', H(18));
+    const daily = p.find((x) => x.rule.id === 'std-24h' && x.kind === 'work');
+    assert.equal(daily.stopAt, H(19));
+    assert.equal(p[0].rule.id, 'std-24h');
+  },
+
+  'plan: a driver must stop in time to fit the 7-hour rest in the 24 hours'() {
+    // 3½ hours work and a 6-hour rest (too short to start a new period) since 06:00. The 7-hour
+    // rest has to fit before 06:00 tomorrow, so it must start by 23:00, before the 12-hour
+    // limit would be reached at 00:30.
+    const slots = record([[0, 6, 'R'], [6, 8, 'W'], [8, 8.5, 'R'], [8.5, 10, 'W'], [10, 16, 'R']]);
+    const daily = plan(slots, 'standard-solo', H(16)).find((x) => x.rule.id === 'std-24h');
+    assert.equal(daily.kind, 'rest');
+    assert.equal(daily.stopAt, H(23));
+  },
+
+  'plan: already over the limit means stop now'() {
+    const slots = record([[0, 6, 'R'], [6, 11.5, 'W']]);
+    const p = plan(slots, 'standard-solo', H(11.5));
+    assert.equal(p[0].stopAt, H(11.5));
+    assert.equal(p[0].overNow, true);
   },
 
   'BFM counts night work towards the long/night limit'() {

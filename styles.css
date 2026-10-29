@@ -13,6 +13,9 @@
   --green: #17734a;
   --green-light: #e3f4ea;
   --bg: #eef1ef;
+  --now: #e07b00;
+  --window: #fff1c7;
+  --window-edge: #d9a400;
   --label-col: 64px;
   --total-col: 64px;
 }
@@ -87,6 +90,25 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sev-severe { background: #c4161c; }
 .sev-critical { background: #7d0b10; }
 
+/* ---- Next limits ---- */
+
+.planner { margin: 0 0 16px; padding: 14px 16px; background: #fff; border: 1px solid var(--paper-edge); border-radius: 8px; }
+.planner-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.planner h2 { margin: 0; font-size: 1.05rem; }
+.planner-lead { margin: 0; color: var(--muted); }
+.planner-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.plan-item { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 10px; border-radius: 6px; background: var(--bg); }
+.plan-item.first { background: var(--diary-light); box-shadow: inset 4px 0 0 var(--diary); }
+.plan-item.over { background: var(--red-light); box-shadow: inset 4px 0 0 var(--red); }
+.plan-item.plan-clear { display: block; color: var(--green); background: var(--green-light); }
+.plan-when { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.plan-time { font-size: 1.35rem; line-height: 1.1; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+.plan-item.over .plan-time { color: var(--red); }
+.plan-left { font-size: 0.8rem; color: var(--muted); }
+.plan-text { display: flex; flex-direction: column; min-width: 0; }
+.plan-text span { font-size: 0.88rem; color: var(--muted); }
+.planner-note { margin: 10px 0 0; font-size: 0.8rem; color: var(--muted); max-width: 80ch; }
+
 /* ---- Limits table ---- */
 
 .limits { background: #fff; border: 1px solid var(--paper-edge); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; }
@@ -132,7 +154,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .grid {
   display: grid;
   grid-template-columns: var(--label-col) repeat(96, minmax(7px, 1fr)) var(--total-col);
-  grid-template-rows: 24px 40px 40px 14px;
+  grid-template-rows: 24px 40px 40px 20px;
   min-width: 860px;
   user-select: none;
   -webkit-user-select: none;
@@ -178,7 +200,21 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cell.row-W.on.breach::after, .cell.row-W.on.breach::before { background: var(--red); }
 
 .cell.row-X { background: transparent; border: 0; cursor: default; touch-action: auto; }
-.cell.row-X.on { background: var(--red); cursor: help; }
+.cell.row-X.on { background: var(--red); cursor: pointer; }
+.cell.row-X.on:hover { background: #8f0f14; }
+
+/* The time now. */
+.cell.now { box-shadow: inset 2px 0 0 var(--now); }
+.cell.row-X.now { box-shadow: inset 2px 0 0 var(--now); }
+
+/* A breach picked to explain: its period is shaded, its own blocks are outlined. */
+.cell.row-W.in-window, .cell.row-R.in-window { background: var(--window); }
+.cell.in-window.win-first { box-shadow: inset 2px 0 0 var(--window-edge); }
+.cell.in-window.win-last { box-shadow: inset -2px 0 0 var(--window-edge); }
+.cell.row-X.in-window { background: var(--window); }
+.cell.row-X.in-window.on { background: var(--red); }
+.cell.row-X.selected { background: #7d0b10; outline: 2px solid #7d0b10; }
+.cell.row-W.on.breach.selected { background: #f8c7c7; }
 
 .total {
   display: flex; align-items: center; justify-content: center; margin-left: 6px;
@@ -201,17 +237,49 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sheet-breaches h3 { color: var(--red); }
 .sheet-breaches ul { margin: 6px 0 0; padding: 0; list-style: none; }
 
+.breach-item { cursor: pointer; border-radius: 4px; padding: 2px 4px; margin-left: -4px; }
+.breach-item:hover { background: rgba(196, 22, 28, 0.08); }
+.breach-item.selected { background: var(--window); outline: 2px solid var(--window-edge); }
+.breach-item:focus-visible { outline: 2px solid var(--diary); }
+
+/* ---- Breach explanation panel ---- */
+
+.breach-detail {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  background: #fff; border-top: 4px solid var(--red); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-top: 12px; max-height: 60vh; overflow-y: auto;
+}
+.detail-inner { max-width: 1148px; margin: 0 auto; }
+.detail-top { display: flex; justify-content: space-between; align-items: center; }
+.detail-close { border: 0; background: none; font-size: 1.8rem; line-height: 1; padding: 0 6px; cursor: pointer; color: var(--muted); min-width: 44px; min-height: 44px; }
+.breach-detail h2 { margin: 2px 0 4px; font-size: 1.1rem; color: var(--red); }
+.detail-message { margin: 0 0 8px; }
+.detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 16px; margin: 0 0 6px; }
+.detail-facts dt { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.detail-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.detail-hint { margin: 0 0 8px; font-size: 0.82rem; color: var(--muted); }
+.detail-nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.detail-nav button { padding: 8px 12px; min-height: 40px; border-radius: 6px; border: 1px solid var(--diary); background: #fff; color: var(--diary); font-weight: 600; cursor: pointer; }
+.detail-nav button:disabled { opacity: 0.4; cursor: default; }
+.detail-nav span { font-size: 0.85rem; color: var(--muted); }
+body.detail-open { padding-bottom: 260px; }
+
 .footer { color: var(--muted); font-size: 0.82rem; padding: 4px 0 32px; }
 .footer p { margin: 0 0 8px; max-width: 90ch; }
 
 @media (max-width: 600px) {
   .app-header h1 { font-size: 1.25rem; }
+  .plan-item { grid-template-columns: 5.5rem minmax(0, 1fr); gap: 10px; }
+  .detail-hint { display: none; }
   .field, .field-wide { flex-basis: 100%; }
 }
 
 @media print {
   body { background: #fff; }
-  .app-header, .controls, .hint, .buttons, .limits { display: none; }
+  .app-header, .controls, .hint, .buttons, .limits, .planner, .breach-detail { display: none; }
   .sheet { break-inside: avoid; box-shadow: none; }
   .grid { min-width: 0; }
   .grid-scroll { overflow: visible; }

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, describeRule, formatDuration } = window.EWD;
+  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, describeRule, formatDuration } = window.EWD;
 
   const PAGES = 3;
   const N = PAGES * SLOTS_PER_DAY;
@@ -71,6 +71,9 @@
   const saved = load();
   let state = saved || defaultState();
   let result = null;
+  // Which breach each marked slot belongs to, and the breach picked to explain (by key).
+  let breachAt = new Map();
+  let selectedKey = null;
 
   // ---- Dates and times ----------------------------------------------------------------------
 
@@ -92,6 +95,21 @@
 
   function fmtTime(i) {
     return `${formatDate(pageDate(Math.floor(i / SLOTS_PER_DAY)))} ${clock(i)}`;
+  }
+
+  // The 15-minute block the time now falls in, or -1 when today is not on the sheets.
+  function nowIndex() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const day = Math.round((today - pageDate(0)) / 86400000);
+    if (day < 0 || day >= PAGES) return -1;
+    return day * SLOTS_PER_DAY + Math.floor((now.getHours() * 60 + now.getMinutes()) / SLOT_MINUTES);
+  }
+
+  function slotDate(i) {
+    const d = pageDate(Math.floor(i / SLOTS_PER_DAY));
+    d.setMinutes((i % SLOTS_PER_DAY) * SLOT_MINUTES);
+    return d;
   }
 
   // ---- Building the sheets ------------------------------------------------------------------
@@ -292,6 +310,16 @@
     grid.addEventListener('pointerup', end);
     grid.addEventListener('pointercancel', end);
     grid.addEventListener('lostpointercapture', end);
+
+    // Tapping a red BREACH bar explains it; tapping it again closes the explanation.
+    grid.addEventListener('click', (e) => {
+      const cell = e.target.closest('.cell.row-X');
+      if (!cell) return;
+      const n = breachAt.get(Number(cell.dataset.i));
+      if (n == null) return;
+      const b = result.breaches[n];
+      selectBreach(selectedKey === breachKey(b) ? null : b);
+    });
   }
 
   function paint(from, to, value) {
@@ -348,6 +376,7 @@
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
+    breachAt = breachSlots;
 
     sheets.forEach((s, p) => {
       const base = p * SLOTS_PER_DAY;
@@ -399,7 +428,146 @@
     if (full) {
       renderSummary();
       renderLimits(ruleset);
+      renderPlanner();
     }
+    markNow();
+    applySelection();
+  }
+
+  // ---- Time now and next limits -------------------------------------------------------------
+
+  function markNow() {
+    const now = nowIndex();
+    sheets.forEach((s, p) => {
+      for (const row of ['W', 'R', 'X']) {
+        s.cells[row].forEach((c, q) => c.classList.toggle('now', p * SLOTS_PER_DAY + q === now));
+      }
+    });
+  }
+
+  function planAction(item) {
+    const { rule, kind } = item;
+    const d = describeRule(rule);
+    if (item.overNow) return ['Rest now', `You are over this limit. ${d.period}: ${d.work.toLowerCase()}.`];
+    if (kind === 'rest' || kind === 'night') return ['Start your rest', `${d.period}: ${d.rest}.`];
+    if (kind === 'longnight') return ['Long/night work limit', `${d.period}: ${d.work.toLowerCase()}.`];
+    if (kind === 'between') return ['Stop for a 24-hour rest', `${d.period}: ${d.work.toLowerCase()}.`];
+    if (rule.period < H(24)) return ['Take a break', `${d.period}: ${d.work.toLowerCase()}. ${d.rest} resets it.`];
+    if (rule.period === H(24)) return ['Stop work for the day', `${d.period}: ${d.work.toLowerCase()}.`];
+    return ['Weekly work limit', `${d.period}: ${d.work.toLowerCase()}.`];
+  }
+
+  function renderPlanner() {
+    const lead = $('#planner-lead');
+    const list = $('#planner-list');
+    const from = nowIndex();
+    if (from < 0) {
+      lead.textContent = "Today isn't on the sheets. Set the middle sheet to today's date to see your next limits.";
+      list.replaceChildren();
+      return;
+    }
+    const now = new Date();
+    const working = state.slots[from] === 'W';
+    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    lead.textContent = `It's ${time}${working ? ' and you are on work' : ''}. If you work from now without a break:`;
+    const items = plan(state.slots, state.ruleset, from);
+    if (!items.length) {
+      list.replaceChildren(el('li', 'plan-item plan-clear', "No limit is reached before the end of tomorrow's sheet."));
+      return;
+    }
+    const nowPage = Math.floor(from / SLOTS_PER_DAY);
+    list.replaceChildren(...items.map((item, k) => {
+      const [action, detail] = planAction(item);
+      const li = el('li', `plan-item${k === 0 ? ' first' : ''}${item.overNow ? ' over' : ''}`);
+      const when = el('div', 'plan-when');
+      const page = Math.floor(item.stopAt / SLOTS_PER_DAY);
+      if (item.overNow) {
+        when.append(el('strong', 'plan-time', 'Now'));
+      } else {
+        when.append(el('strong', 'plan-time', clock(item.stopAt)));
+        const minutes = Math.max(0, Math.round((slotDate(item.stopAt) - now) / 60000));
+        const left = minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+        when.append(el('span', 'plan-left', `${page !== nowPage ? `${formatDate(pageDate(page))} · ` : ''}in ${left}`));
+      }
+      const text = el('div', 'plan-text');
+      text.append(el('strong', null, action), el('span', null, detail));
+      li.append(when, text);
+      return li;
+    }));
+  }
+
+  // ---- Explaining a breach ------------------------------------------------------------------
+
+  function breachKey(b) {
+    return `${b.ruleId}|${b.kind}|${b.start}`;
+  }
+
+  function breachWindow(b) {
+    const start = b.start != null ? b.start : b.slots[0];
+    const end = b.end != null ? b.end : b.slots[b.slots.length - 1] + 1;
+    return [start, end];
+  }
+
+  function selectBreach(b, reveal) {
+    selectedKey = b ? breachKey(b) : null;
+    applySelection();
+    if (b && reveal) {
+      const i = b.slots[0];
+      const cell = sheets[Math.floor(i / SLOTS_PER_DAY)].cells.X[i % SLOTS_PER_DAY];
+      cell.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    }
+  }
+
+  function applySelection() {
+    const n = selectedKey ? result.breaches.findIndex((b) => breachKey(b) === selectedKey) : -1;
+    const b = n >= 0 ? result.breaches[n] : null;
+    if (!b) selectedKey = null;
+    const [from, to] = b ? breachWindow(b) : [-1, -1];
+    const own = new Set(b ? b.slots : []);
+    sheets.forEach((s, p) => {
+      for (const row of ['W', 'R', 'X']) {
+        s.cells[row].forEach((c, q) => {
+          const i = p * SLOTS_PER_DAY + q;
+          const inside = i >= from && i < to;
+          c.classList.toggle('in-window', inside);
+          c.classList.toggle('win-first', inside && i === from);
+          c.classList.toggle('win-last', inside && i === to - 1);
+          c.classList.toggle('selected', own.has(i));
+        });
+      }
+    });
+    document.querySelectorAll('.breach-item').forEach((li) => li.classList.toggle('selected', li.dataset.key === selectedKey));
+
+    const panel = $('#breach-detail');
+    panel.hidden = !b;
+    document.body.classList.toggle('detail-open', !!b);
+    if (!b) return;
+    const rule = RULESETS[state.ruleset].rules.find((r) => r.id === b.ruleId);
+    const d = describeRule(rule);
+    const tag = $('#detail-tag');
+    tag.className = `severity${b.severity ? ` sev-${b.severity}` : ''}`;
+    tag.textContent = severityLabel(b);
+    $('#detail-title').textContent = b.ruleLabel;
+    $('#detail-message').textContent = b.message;
+    $('#detail-period').textContent = `${fmtTime(from)} to ${fmtTime(to)}`;
+    $('#detail-limit').textContent = [d.work, d.rest].filter((t) => t && t !== '—').join('. ');
+    $('#detail-count').textContent = `${n + 1} of ${result.breaches.length}`;
+    $('#detail-prev').disabled = n === 0;
+    $('#detail-next').disabled = n === result.breaches.length - 1;
+  }
+
+  function buildDetail() {
+    $('#detail-close').addEventListener('click', () => selectBreach(null));
+    const step = (delta) => {
+      const n = result.breaches.findIndex((b) => breachKey(b) === selectedKey);
+      const b = result.breaches[n + delta];
+      if (b) selectBreach(b, true);
+    };
+    $('#detail-prev').addEventListener('click', () => step(-1));
+    $('#detail-next').addEventListener('click', () => step(1));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && selectedKey) selectBreach(null);
+    });
   }
 
   function formatHours(slots) {
@@ -444,11 +612,26 @@
     }));
   }
 
+  function severityLabel(b) {
+    return b.severity ? `${b.escalated ? 'escalated ' : ''}${b.severity} risk` : 'breach';
+  }
+
+  // Each breach in a list can be tapped to show it on the sheets.
   function breachItem(b) {
     const li = el('li', 'breach-item');
-    const label = b.severity ? `${b.escalated ? 'escalated ' : ''}${b.severity} risk` : 'breach';
-    const tag = el('span', `severity${b.severity ? ` sev-${b.severity}` : ''}`, label);
+    li.dataset.key = breachKey(b);
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    const tag = el('span', `severity${b.severity ? ` sev-${b.severity}` : ''}`, severityLabel(b));
     li.append(tag, el('strong', null, `${b.ruleLabel}: `), document.createTextNode(b.message));
+    const open = () => selectBreach(selectedKey === breachKey(b) ? null : b, true);
+    li.addEventListener('click', open);
+    li.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    });
     return li;
   }
 
@@ -513,7 +696,18 @@
   }
 
   buildControls();
+  buildDetail();
   for (let p = 0; p < PAGES; p++) buildSheet(p);
   if (saved) update(true);
   else loadExample();
+
+  // Keep the time now and the next limits current.
+  const tick = () => {
+    renderPlanner();
+    markNow();
+  };
+  setInterval(tick, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) tick();
+  });
 })();

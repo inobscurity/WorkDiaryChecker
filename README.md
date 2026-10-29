@@ -7,6 +7,12 @@ the fatigue rules shows in red with its risk category.
 
 **Use it:** <https://inobscurity.github.io/WorkDiaryChecker/>
 
+**Your next limits** shows, from the time now, when you'll have to stop if you keep working
+without a break: the next 15-minute break, the 12-hour daily limit, the latest time your 7-hour
+rest can start, and so on, with a countdown for each. **Tap a red BREACH bar** (or any breach in
+a list) to see which rule was broken, the exact period it covers shaded on the sheets, and its
+risk category.
+
 It runs in any modern browser, on a phone, tablet or computer. Entries stay on the device; nothing
 is sent anywhere.
 

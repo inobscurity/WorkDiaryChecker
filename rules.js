@@ -327,6 +327,7 @@
     }
 
     for (const rule of ruleset.rules) {
+      if (opts.only && rule.id !== opts.only) continue;
       const label = ruleLabel(rule);
       const findings = [];
 
@@ -478,8 +479,51 @@
     return result;
   }
 
+  // How long the driver can keep working from slot `from`, rule by rule, if they work without a
+  // break and then rest. For each rule that would be breached within the record, returns the
+  // slot where work has to stop (`from` if continuing at all would breach it) and the kind of
+  // breach: running out of work time, or running out of time to fit a required rest.
+  function plan(slots, rulesetId, from) {
+    const ruleset = RULESETS[rulesetId];
+    const n = slots.length;
+    if (from < 0 || from >= n) return [];
+    const trial = (k) => slots.map((v, i) => (i < from ? v : i < from + k ? 'W' : 'R'));
+    const out = [];
+    // A driver who is over a limit right now has to stop now, even if the period that was
+    // breached has ended and a new one would allow more work.
+    const overNow = check(trial(0), rulesetId).breaches.filter((b) => b.slots.includes(from - 1));
+    for (const rule of ruleset.rules) {
+      const current = overNow.find((b) => b.ruleId === rule.id);
+      if (current) {
+        out.push({ rule, label: ruleLabel(rule), stopAt: from, kind: current.kind, overNow: true });
+        continue;
+      }
+      // A breach caused by the extra work: it marks at least one of the new work slots.
+      const firstBreach = (k) => check(trial(k), rulesetId, { only: rule.id }).breaches
+        .find((b) => b.slots.some((i) => i >= from && i < from + k));
+      const last = firstBreach(n - from);
+      if (!last) continue;
+      // More work never removes a breach, so search for the first block of work that causes one.
+      let lo = 0;
+      let hi = n - from;
+      let breach = last;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        const b = firstBreach(mid);
+        if (b) {
+          hi = mid;
+          breach = b;
+        } else {
+          lo = mid;
+        }
+      }
+      out.push({ rule, label: ruleLabel(rule), stopAt: from + lo, kind: breach.kind });
+    }
+    return out.sort((a, b) => a.stopAt - b.stopAt);
+  }
+
   return {
     SLOT_MINUTES, SLOTS_PER_DAY, RULESETS, H,
-    check, describeRule, formatDuration, formatPeriod, ruleLabel,
+    check, plan, describeRule, formatDuration, formatPeriod, ruleLabel,
   };
 });

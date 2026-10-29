@@ -50,6 +50,17 @@
 
     <section id="summary" class="summary" aria-live="polite"></section>
 
+    <section id="planner" class="planner" aria-labelledby="planner-title">
+      <div class="planner-head">
+        <h2 id="planner-title">Your next limits</h2>
+        <p id="planner-lead" class="planner-lead"></p>
+      </div>
+      <ol id="planner-list" class="planner-list"></ol>
+      <p class="planner-note">Worked out as if you keep working from now without a break, then rest.
+        A break of the length shown resets that limit. Plan your rest before you reach it, and stop
+        sooner if you feel tired.</p>
+    </section>
+
     <details class="limits" open>
       <summary>Work and rest limits for <span id="limits-name"></span></summary>
       <p class="source">Source: <span id="limits-source"></span>.</p>
@@ -77,8 +88,9 @@
     <p class="hint">
       <strong>How to enter time:</strong> each sheet starts as rest all day. Drag your finger or mouse
       along the top <b>WORK</b> row to change that time to work, and along the bottom <b>REST</b> row to
-      change it back to rest. Each box is 15 minutes. The middle sheet is today. On a phone, scroll a
-      sheet sideways by dragging the hour numbers.
+      change it back to rest. Each box is 15 minutes. The middle sheet is today, and the orange line
+      marks the time now. Tap a red <b>BREACH</b> bar to see which rule was broken and the period it
+      covers. On a phone, scroll a sheet sideways by dragging the hour numbers.
     </p>
 
     <main id="sheets"></main>
@@ -92,6 +104,27 @@
         certificate and are not checked here.</p>
     </footer>
   </div>
+
+  <aside id="breach-detail" class="breach-detail" hidden aria-live="polite" aria-labelledby="detail-title">
+    <div class="detail-inner">
+      <div class="detail-top">
+        <span id="detail-tag" class="severity"></span>
+        <button type="button" id="detail-close" class="detail-close" aria-label="Close">×</button>
+      </div>
+      <h2 id="detail-title"></h2>
+      <p id="detail-message" class="detail-message"></p>
+      <dl class="detail-facts">
+        <div><dt>Period checked</dt><dd id="detail-period"></dd></div>
+        <div><dt>Limit</dt><dd id="detail-limit"></dd></div>
+      </dl>
+      <p class="detail-hint">The period is shaded on the sheets, and the blocks that broke the limit are red.</p>
+      <div class="detail-nav">
+        <button type="button" id="detail-prev">‹ Previous breach</button>
+        <span id="detail-count"></span>
+        <button type="button" id="detail-next">Next breach ›</button>
+      </div>
+    </div>
+  </aside>
 
   <script src="rules.js"></script>
   <script src="app.js"></script>
