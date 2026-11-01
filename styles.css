@@ -14,6 +14,8 @@
   --green-light: #e3f4ea;
   --bg: #eef1ef;
   --now: #e07b00;
+  --ns: #b35c00;
+  --ns-light: #fff1dc;
   --window: #fff1c7;
   --window-edge: #d9a400;
   --label-col: 64px;
@@ -128,7 +130,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 }
 .pen span { font-size: 0.8rem; color: var(--muted); }
 .pen.active { border: 2px solid var(--diary); background: var(--diary-light); }
-.pen[data-pen="N"] strong::after { content: " - - -"; color: var(--pen); letter-spacing: 1px; }
+.pen[data-pen="N"] strong::after { content: " ▬ ▬ ▬"; color: var(--ns); font-size: 0.7em; letter-spacing: 1px; }
+.pen[data-pen="R"] strong::after { content: " ▬▬▬▬"; color: var(--pen); font-size: 0.7em; }
+.pen[data-pen="N"].active { border-color: var(--ns); background: var(--ns-light); }
 
 /* ---- The day before ---- */
 
@@ -276,11 +280,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cell.row-W.on.end::before { right: -2px; top: 50%; bottom: -2px; }
 .cell.row-R.on.end::before { right: -2px; top: -2px; bottom: 50%; }
 
-/* Rest that isn't stationary: a dashed pen line. */
+/* Rest that isn't stationary: one orange dash per 15-minute box, so it reads as dashed at any
+   width, on a pale orange ground. */
+.cell.row-R.on.ns { background: var(--ns-light); }
 .cell.row-R.on.ns::after {
-  background: repeating-linear-gradient(90deg, var(--pen) 0 4px, transparent 4px 7px);
+  left: 0; background: linear-gradient(90deg, var(--ns) 0 60%, transparent 60% 100%);
 }
-.cell.row-R.on.ns { background: #f3f5fb; }
+.cell.row-R.on.ns.drop::before, .cell.row-R.on.ns.end::before { background: var(--ns); }
 .cell.row-W.on.longnight { background: #eef0fb; }
 .cell.row-W.on.breach { background: var(--red-light); }
 .cell.row-W.on.breach::after, .cell.row-W.on.breach::before { background: var(--red); }

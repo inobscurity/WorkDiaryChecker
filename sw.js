@@ -1,6 +1,5 @@
-// Keeps the checker working offline. Files are served from the cache first and refreshed in the
-// background, so a new version shows up on the next launch after it is published.
-const CACHE = 'work-diary-checker-v11';
+// Keeps the checker working offline.
+const CACHE = 'work-diary-checker-v12';
 const FILES = [
   './',
   'index.html',
@@ -27,18 +26,21 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Network first, so a new version shows as soon as the app is opened online. The cache is the
+// fallback when there is no signal.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(event.request, { ignoreSearch: true });
-      const fresh = fetch(event.request)
-        .then((response) => {
-          if (response.ok) cache.put(event.request, response.clone());
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fresh;
+      try {
+        const response = await fetch(event.request, { cache: 'no-cache' });
+        if (response.ok) cache.put(event.request, response.clone());
+        return response;
+      } catch (err) {
+        const cached = await cache.match(event.request, { ignoreSearch: true });
+        if (cached) return cached;
+        throw err;
+      }
     })
   );
 });
