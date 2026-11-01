@@ -34,6 +34,7 @@
   //   period        length of the "in any period of" window, in slots
   //   relevantRest  a window starts at the end of every rest break at least this long
   //   relevantNight a window also starts at the end of every night rest break
+  //   anyRest       the rest needed can be rest that isn't stationary (a moving sleeper berth)
   //   maxWork       maximum work in the window
   //   workRisk      upper bounds of minor, substantial and severe risk for work over the limit
   //   restBlocks    { length, count }: required continuous rest blocks inside the window
@@ -99,7 +100,7 @@
       twoUp: true,
       rules: [
         ...SHORT_PERIODS('std2', 'Sch 1 Table 3'),
-        { id: 'std2-24h', period: H(24), relevantRest: H(5), maxWork: H(12), workRisk: RISK_DAY, restBlocks: { length: H(5), count: 1 }, restText: '5 continuous hours stationary rest, or 5 continuous hours rest in an approved sleeper berth while the vehicle is moving' },
+        { id: 'std2-24h', period: H(24), relevantRest: H(5), anyRest: true, maxWork: H(12), workRisk: RISK_DAY, restBlocks: { length: H(5), count: 1 }, restText: '5 continuous hours stationary rest, or 5 continuous hours rest in an approved sleeper berth while the vehicle is moving' },
         { id: 'std2-52h', period: H(52), relevantRest: H(10), restBlocks: { length: H(10), count: 1 }, restText: '10 continuous hours stationary rest' },
         { id: 'std2-7d', period: DAYS(7), relevantRest: H(24), maxWork: H(60), workRisk: RISK_WEEKS, restBlocks: { length: H(24), count: 1 }, restInBlocks: { block: H(7), total: H(24) }, restText: '24 continuous hours stationary rest, and another 24 hours stationary rest in blocks of at least 7 continuous hours' },
         { id: 'std2-14d', period: DAYS(14), relevantNight: true, maxWork: H(120), workRisk: RISK_WEEKS, nightRests: { count: 4, consecutive: true }, restText: '2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
@@ -343,12 +344,20 @@
     const statRuns = findRestRuns(slots.map((v) => v === 'W' || v === 'N'));
     const history = opts.history || {};
     const historyUsed = new Set();
+    // Short breaks can be any rest. Major rest breaks, and the longer periods counted from them,
+    // need stationary rest, except where a rule allows rest in a moving sleeper berth.
+    // `forRequirement` asks about the rest a rule requires, rather than where periods start.
+    function runsFor(rule, forRequirement) {
+      if (!rule || rule.anyRest) return restRuns;
+      if (forRequirement) return statRuns;
+      return rule.relevantRest > 1 || rule.relevantNight ? statRuns : restRuns;
+    }
     const result = { ruleset, breaches: [], notes: [], longNight: new Set(), knownEnd };
     if (!work.some(Boolean) && !Object.keys(prior).length && !Object.keys(history).length) return result;
 
     if (ruleset.rules.some((r) => r.maxLongNight != null)) {
       const rule24 = ruleset.rules.find((r) => r.period === H(24) && r.maxWork != null);
-      result.longNight = longNightSlots(work, restRuns, rule24);
+      result.longNight = longNightSlots(work, runsFor(rule24), rule24);
     }
 
     for (const rule of ruleset.rules) {
@@ -392,7 +401,7 @@
           Object.assign(f, riskOf(rule, 'work', f.amount, f.total));
         }
       } else {
-        for (const s of windowStarts(restRuns, rule, n)) {
+        for (const s of windowStarts(runsFor(rule), rule, n)) {
           const end = s + rule.period;
           const complete = end <= knownEnd;
           const range = `the ${formatPeriod(rule.period)} from ${fmtTime(s)}`;
@@ -431,7 +440,7 @@
 
           if (rule.restBlocks && complete) {
             const { length, count } = rule.restBlocks;
-            const lengths = restLengthsIn(restRuns, s, end);
+            const lengths = restLengthsIn(runsFor(rule, true), s, end);
             const blocks = lengths.filter((len) => len >= length).length;
             if (blocks < count) {
               // The risk category follows the block that fell short: the best one not counted.
@@ -450,7 +459,7 @@
 
           if (rule.restInBlocks && complete) {
             const { block, total } = rule.restInBlocks;
-            const lengths = restLengthsIn(restRuns, s, end).filter((len) => len >= block);
+            const lengths = restLengthsIn(statRuns, s, end).filter((len) => len >= block);
             // A 24-hour continuous rest used for the other requirement can't count here as well.
             if (rule.restBlocks && lengths.length && lengths[0] >= rule.restBlocks.length) {
               lengths[0] -= rule.restBlocks.length;
@@ -473,8 +482,8 @@
               const a = d * SLOTS_PER_DAY + NIGHT_REST_FROM;
               const b = d * SLOTS_PER_DAY + NIGHT_REST_TO;
               if (a < s || b > end) continue;
-              ok[d] = longestRestIn(restRuns, a, b) >= NIGHT_REST_LENGTH ||
-                restRuns.some((r) => r.end - r.start >= H(24) && r.start < b && r.end > a);
+              ok[d] = longestRestIn(statRuns, a, b) >= NIGHT_REST_LENGTH ||
+                statRuns.some((r) => r.end - r.start >= H(24) && r.start < b && r.end > a);
             }
             const nights = ok.filter(Boolean).length;
             const needConsecutive = rule.nightRests.consecutive;
@@ -483,7 +492,7 @@
               // Graded by the longest rest in a night that fell short of a night rest break.
               let best = 0;
               ok.forEach((v, d) => {
-                if (!v) best = Math.max(best, longestRestIn(restRuns, d * SLOTS_PER_DAY + NIGHT_REST_FROM, d * SLOTS_PER_DAY + NIGHT_REST_TO));
+                if (!v) best = Math.max(best, longestRestIn(statRuns, d * SLOTS_PER_DAY + NIGHT_REST_FROM, d * SLOTS_PER_DAY + NIGHT_REST_TO));
               });
               const flagged = workSlotsIn(work, s, end);
               findings.push({

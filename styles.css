@@ -117,6 +117,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sev-severe { background: #c4161c; }
 .sev-critical { background: #7d0b10; }
 
+/* ---- Rest pen ---- */
+
+.pen-bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 12px; }
+.pen-label { align-self: center; font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.pen {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 8px 12px; border-radius: 6px; border: 1px solid #b8c4c2; background: #fff; color: var(--ink);
+  cursor: pointer; flex: 1 1 220px; min-width: 0;
+}
+.pen span { font-size: 0.8rem; color: var(--muted); }
+.pen.active { border: 2px solid var(--diary); background: var(--diary-light); }
+.pen[data-pen="N"] strong::after { content: " - - -"; color: var(--pen); letter-spacing: 1px; }
+
 /* ---- The day before ---- */
 
 .day-before-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; }

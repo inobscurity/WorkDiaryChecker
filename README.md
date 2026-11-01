@@ -19,6 +19,13 @@ for the 7-day limit, 12 for 14 days, 26 for 28 days, with the dates shown), plus
 for BFM's 36-hour limit. With the first two sheets, ending with the middle sheet, they check the
 longer work limits, and Your next limits takes them into account.
 
+**Rest before these sheets** asks when your last 24-hour rest ended, and how many night rest
+breaks and 24-hour rests you took in the days before, so the 7, 14 and 28-day rest rules can be
+checked too. **Show the day before** adds an optional sheet for the day before the first one, for
+when work ran overnight into it: every rule is then checked across that midnight. The REST line
+can draw **stationary rest** or **rest that isn't stationary** (in a seat, or a moving sleeper
+berth for two-up drivers); only stationary rest counts for the major rest breaks.
+
 It runs in any modern browser, on a phone, tablet or computer. Entries stay on the device; nothing
 is sent anywhere.
 
@@ -65,5 +72,6 @@ installed copies pick up the new version.
 ## Tests
 
 ```sh
-node test/rules.test.js
+node test/rules.test.js   # worked examples, including the NHVR's
+node test/grid.test.js    # every limit at exactly the limit and 15 minutes past it
 ```

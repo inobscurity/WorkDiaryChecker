@@ -324,6 +324,28 @@ const tests = {
     assert.deepEqual(run(2), []);
   },
 
+  'rest that is not stationary does not count as the 7-hour stationary rest'() {
+    const day = (v) => record([[0, 6, 'R'], [6, 11, 'W'], [11.5, 16, 'W'], [16, 23, v], [23, 25, 'W'], [25, 72, 'R']]);
+    assert.deepEqual(ids(check(day('R'), 'standard-solo')), []);
+    const r = check(day('N'), 'standard-solo');
+    assert.ok(r.breaches.some((b) => b.ruleId === 'std-24h' && b.kind === 'rest'));
+  },
+
+  'rest that is not stationary still counts as a short break'() {
+    const slots = record([[0, 6, 'R'], [6, 11, 'W'], [11, 11.25, 'N'], [11.25, 13.5, 'W'], [13.5, 72, 'R']]);
+    assert.deepEqual(ids(check(slots, 'standard-solo')), []);
+  },
+
+  'two-up: 5 hours in a moving sleeper berth meets the 24-hour rest, but not the 52-hour rest'() {
+    // Work and moving-berth rest in turns: 5 hours each, across two days.
+    const entries = [[0, 6, 'R']];
+    for (let t = 6; t < 66; t += 10) entries.push([t, t + 5, 'W'], [t + 5, t + 10, 'N']);
+    entries.push([66, 72, 'R']);
+    const r = check(record(entries), 'standard-two-up');
+    assert.equal(r.breaches.filter((b) => b.ruleId === 'std2-24h' && b.kind === 'rest').length, 0);
+    assert.ok(r.breaches.some((b) => b.ruleId === 'std2-52h'));
+  },
+
   'BFM counts night work towards the long/night limit'() {
     // Three nights of 00:00–06:00 work, each followed by a 5-hour day: 18 h of night work.
     const entries = [];

@@ -58,6 +58,8 @@
       // Answers about rest before the sheets, as entered.
       history: { lastRestDay: '', lastRestTime: '', workSince: '', nights: {}, nightBefore: '', longRests: {} },
       showDayBefore: false,
+      // What the REST line draws: 'R' stationary rest, 'N' rest that isn't stationary.
+      restPen: 'R',
     };
   }
 
@@ -364,7 +366,7 @@
       e.preventDefault();
       const i = Number(cell.dataset.i);
       drag = { grid, last: i };
-      paint(i, i, cell.dataset.row);
+      paint(i, i, penFor(cell.dataset.row));
       grid.setPointerCapture(e.pointerId);
     });
     // The row under the finger decides: the WORK row marks work, the REST row marks rest.
@@ -373,7 +375,7 @@
       const cell = cellAt(e.clientX, e.clientY, grid);
       if (!cell || cell.dataset.row === 'X') return;
       const i = Number(cell.dataset.i);
-      paint(Math.min(i, drag.last), Math.max(i, drag.last), cell.dataset.row);
+      paint(Math.min(i, drag.last), Math.max(i, drag.last), penFor(cell.dataset.row));
       drag.last = i;
     });
     const end = () => {
@@ -396,6 +398,11 @@
     });
   }
 
+  // The REST line draws stationary rest, or rest that isn't stationary, depending on the pen.
+  function penFor(row) {
+    return row === 'R' ? state.restPen || 'R' : row;
+  }
+
   function paint(from, to, value) {
     let changed = false;
     for (let i = from; i <= to; i++) {
@@ -413,6 +420,7 @@
   // checked across that midnight. Removing it clears its entries, so nothing hidden is counted.
   function buildDayBeforeToggle() {
     const bar = el('div', 'day-before-bar');
+    buildRestPen();
     const button = el('button', 'day-before-toggle');
     button.type = 'button';
     button.id = 'day-before-toggle';
@@ -438,6 +446,37 @@
       update(true);
     });
     label();
+  }
+
+  function buildRestPen() {
+    const bar = el('div', 'pen-bar');
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'What the REST line draws');
+    bar.append(el('span', 'pen-label', 'REST line draws'));
+    const pens = [
+      ['R', 'Stationary rest', 'Out of the vehicle, or in the sleeper berth of a stationary vehicle'],
+      ['N', 'Rest, not stationary', 'In a seat, or (two-up) in a sleeper berth while moving'],
+    ];
+    const buttons = pens.map(([value, label, help]) => {
+      const b = el('button', 'pen');
+      b.type = 'button';
+      b.dataset.pen = value;
+      b.append(el('strong', null, label), el('span', null, help));
+      b.addEventListener('click', () => {
+        state.restPen = value;
+        sync();
+        save();
+      });
+      return b;
+    });
+    const sync = () => buttons.forEach((b) => {
+      const on = b.dataset.pen === (state.restPen || 'R');
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    bar.append(...buttons);
+    sync();
+    $('#sheets').prepend(bar);
   }
 
   // ---- Example ------------------------------------------------------------------------------
@@ -813,7 +852,7 @@
       const i = p * SLOTS_PER_DAY + q;
       const v = state.slots[i];
       const prev = i > 0 ? state.slots[i - 1] : null;
-      if (v && v !== prev) rows.push([i, v === 'W' ? 'Start work' : 'Start rest']);
+      if (v && v !== prev) rows.push([i, v === 'W' ? 'Start work' : v === 'N' ? 'Start rest (not stationary)' : 'Start rest']);
       else if (!v && prev && q > 0) rows.push([i, prev === 'W' ? 'End work' : 'End rest']);
     }
     if (!rows.length) {
