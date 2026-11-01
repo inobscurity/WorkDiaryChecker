@@ -119,21 +119,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sev-severe { background: #c4161c; }
 .sev-critical { background: #7d0b10; }
 
-/* ---- Rest pen ---- */
-
-.pen-bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 12px; }
-.pen-label { align-self: center; font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.pen {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
-  padding: 8px 12px; border-radius: 6px; border: 1px solid #b8c4c2; background: #fff; color: var(--ink);
-  cursor: pointer; flex: 1 1 220px; min-width: 0;
-}
-.pen span { font-size: 0.8rem; color: var(--muted); }
-.pen.active { border: 2px solid var(--diary); background: var(--diary-light); }
-.pen[data-pen="N"] strong::after { content: " ▬ ▬ ▬"; color: var(--ns); font-size: 0.7em; letter-spacing: 1px; }
-.pen[data-pen="R"] strong::after { content: " ▬▬▬▬"; color: var(--pen); font-size: 0.7em; }
-.pen[data-pen="N"].active { border-color: var(--ns); background: var(--ns-light); }
-
 /* ---- The day before ---- */
 
 .day-before-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; }
@@ -239,7 +224,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .grid {
   display: grid;
   grid-template-columns: var(--label-col) repeat(96, minmax(7px, 1fr)) var(--total-col);
-  grid-template-rows: 24px 40px 40px 20px;
+  grid-template-rows: 24px 40px 40px 40px 20px;
   min-width: 860px;
   user-select: none;
   -webkit-user-select: none;
@@ -264,32 +249,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cell.row-W { border-top: 1px solid var(--grid-hour); }
 .cell.half { border-left-color: #a9c2be; }
 .cell.hour-start { border-left: 1px solid var(--grid-hour); }
-.cell.row-W:hover, .cell.row-R:hover { background: var(--diary-light); }
+.cell.row-W:hover, .cell.row-R:hover, .cell.row-N:hover { background: var(--diary-light); }
 
 /* The pen line: a thick stroke through the middle of each marked block. */
-.cell.row-W.on::after, .cell.row-R.on::after {
+.cell.row-W.on::after, .cell.row-R.on::after, .cell.row-N.on::after {
   content: ""; position: absolute; left: -1px; right: 0; top: calc(50% - 2.5px); height: 5px;
   background: var(--pen); border-radius: 1px;
 }
-.cell.row-W.on.drop::before, .cell.row-R.on.drop::before,
-.cell.row-W.on.end::before, .cell.row-R.on.end::before {
-  content: ""; position: absolute; width: 3px; background: var(--pen); z-index: 1;
-}
-.cell.row-W.on.drop::before { left: -2px; top: 50%; bottom: -2px; }
-.cell.row-R.on.drop::before { left: -2px; top: -2px; bottom: 50%; }
-.cell.row-W.on.end::before { right: -2px; top: 50%; bottom: -2px; }
-.cell.row-R.on.end::before { right: -2px; top: -2px; bottom: 50%; }
 
-/* Rest that isn't stationary: one orange dash per 15-minute box, so it reads as dashed at any
-   width, on a pale orange ground. */
-.cell.row-R.on.ns { background: var(--ns-light); }
-.cell.row-R.on.ns::after {
-  left: 0; background: linear-gradient(90deg, var(--ns) 0 60%, transparent 60% 100%);
+/* Steps between lines, drawn at the left edge of the block where the new line starts. */
+.cell.arrive-up::before, .cell.arrive-down::before, .cell.leave-up::before,
+.cell.leave-down::before, .cell.pass::before {
+  content: ""; position: absolute; left: -2px; width: 3px; background: var(--pen); z-index: 1;
 }
-.cell.row-R.on.ns.drop::before, .cell.row-R.on.ns.end::before { background: var(--ns); }
+.cell.arrive-up::before, .cell.leave-up::before { top: -2px; bottom: calc(50% - 2.5px); }
+.cell.arrive-down::before, .cell.leave-down::before { top: calc(50% - 2.5px); bottom: -2px; }
+.cell.pass::before { top: -2px; bottom: -2px; }
+
+/* The line for rest that isn't stationary: its own row, with a pale orange ground. */
+.row-label.row-N { background: var(--ns); font-size: 0.5rem; line-height: 1.15; text-align: center; padding: 0 2px; letter-spacing: 0.04em; }
+.cell.row-N { background: var(--ns-light); }
+.cell.row-N.on { background: #ffe2b8; }
+.total.row-N { color: var(--ns); }
+
 .cell.row-W.on.longnight { background: #eef0fb; }
 .cell.row-W.on.breach { background: var(--red-light); }
-.cell.row-W.on.breach::after, .cell.row-W.on.breach::before { background: var(--red); }
+.cell.row-W.on.breach::after { background: var(--red); }
 
 .cell.row-X { background: transparent; border: 0; cursor: default; touch-action: auto; }
 .cell.row-X.on { background: var(--red); cursor: pointer; }
@@ -304,7 +289,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cell.row-X.now { box-shadow: inset 2px 0 0 var(--now); }
 
 /* A breach picked to explain: its period is shaded, its own blocks are outlined. */
-.cell.row-W.in-window, .cell.row-R.in-window { background: var(--window); }
+.cell.row-W.in-window, .cell.row-R.in-window, .cell.row-N.in-window { background: var(--window); }
 .cell.in-window.win-first { box-shadow: inset 2px 0 0 var(--window-edge); }
 .cell.in-window.win-last { box-shadow: inset -2px 0 0 var(--window-edge); }
 .cell.row-X.in-window { background: var(--window); }

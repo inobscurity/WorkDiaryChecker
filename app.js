@@ -58,8 +58,6 @@
       // Answers about rest before the sheets, as entered.
       history: { lastRestDay: '', lastRestTime: '', workSince: '', nights: {}, nightBefore: '', longRests: {} },
       showDayBefore: false,
-      // What the REST line draws: 'R' stationary rest, 'N' rest that isn't stationary.
-      restPen: 'R',
     };
   }
 
@@ -111,10 +109,9 @@
     return new Date(y, m - 1, d + p - FIRST);
   }
 
-  // Which line of the graph a block is drawn on: work, or rest of either kind.
-  function lineRow(v) {
-    return v === 'W' ? 'W' : 'R';
-  }
+  // The lines of the graph, top to bottom: work, stationary rest, rest that isn't stationary.
+  // A block's value is the line it is drawn on.
+  const LINES = ['W', 'R', 'N'];
 
   function formatDate(date, long) {
     return date.toLocaleDateString('en-AU', long
@@ -310,9 +307,9 @@
     });
     grid.append(el('div', 'total-head', 'Total hours'));
 
-    const cells = { W: [], R: [], X: [] };
+    const cells = { W: [], R: [], N: [], X: [] };
     const totals = {};
-    for (const [row, label] of [['W', 'WORK'], ['R', 'REST'], ['X', 'BREACH']]) {
+    for (const [row, label] of [['W', 'WORK'], ['R', 'REST'], ['N', 'REST NOT STATIONARY'], ['X', 'BREACH']]) {
       grid.append(el('div', `row-label row-${row}`, label));
       for (let q = 0; q < SLOTS_PER_DAY; q++) {
         const cell = el('div', `cell row-${row}${q % 4 === 0 ? ' hour-start' : ''}${q % 4 === 2 ? ' half' : ''}`);
@@ -366,7 +363,7 @@
       e.preventDefault();
       const i = Number(cell.dataset.i);
       drag = { grid, last: i };
-      paint(i, i, penFor(cell.dataset.row));
+      paint(i, i, cell.dataset.row);
       grid.setPointerCapture(e.pointerId);
     });
     // The row under the finger decides: the WORK row marks work, the REST row marks rest.
@@ -375,7 +372,7 @@
       const cell = cellAt(e.clientX, e.clientY, grid);
       if (!cell || cell.dataset.row === 'X') return;
       const i = Number(cell.dataset.i);
-      paint(Math.min(i, drag.last), Math.max(i, drag.last), penFor(cell.dataset.row));
+      paint(Math.min(i, drag.last), Math.max(i, drag.last), cell.dataset.row);
       drag.last = i;
     });
     const end = () => {
@@ -398,11 +395,6 @@
     });
   }
 
-  // The REST line draws stationary rest, or rest that isn't stationary, depending on the pen.
-  function penFor(row) {
-    return row === 'R' ? state.restPen || 'R' : row;
-  }
-
   function paint(from, to, value) {
     let changed = false;
     for (let i = from; i <= to; i++) {
@@ -420,7 +412,6 @@
   // checked across that midnight. Removing it clears its entries, so nothing hidden is counted.
   function buildDayBeforeToggle() {
     const bar = el('div', 'day-before-bar');
-    buildRestPen();
     const button = el('button', 'day-before-toggle');
     button.type = 'button';
     button.id = 'day-before-toggle';
@@ -446,37 +437,6 @@
       update(true);
     });
     label();
-  }
-
-  function buildRestPen() {
-    const bar = el('div', 'pen-bar');
-    bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', 'What the REST line draws');
-    bar.append(el('span', 'pen-label', 'REST line draws'));
-    const pens = [
-      ['R', 'Stationary rest', 'Out of the vehicle, or in the sleeper berth of a stationary vehicle'],
-      ['N', 'Rest, not stationary', 'In a seat, or (two-up) in a sleeper berth while moving'],
-    ];
-    const buttons = pens.map(([value, label, help]) => {
-      const b = el('button', 'pen');
-      b.type = 'button';
-      b.dataset.pen = value;
-      b.append(el('strong', null, label), el('span', null, help));
-      b.addEventListener('click', () => {
-        state.restPen = value;
-        sync();
-        save();
-      });
-      return b;
-    });
-    const sync = () => buttons.forEach((b) => {
-      const on = b.dataset.pen === (state.restPen || 'R');
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-pressed', String(on));
-    });
-    bar.append(...buttons);
-    sync();
-    $('#sheets').prepend(bar);
   }
 
   // ---- Example ------------------------------------------------------------------------------
@@ -531,26 +491,32 @@
       const base = p * SLOTS_PER_DAY;
       let work = 0;
       let rest = 0;
+      let moving = 0;
       for (let q = 0; q < SLOTS_PER_DAY; q++) {
         const i = base + q;
         const v = state.slots[i];
         const prev = i > 0 ? state.slots[i - 1] : null;
-        const next = i < N - 1 ? state.slots[i + 1] : null;
         if (v === 'W') work++;
+        else if (v === 'N') moving++;
         else rest++;
-        for (const row of ['W', 'R']) {
+        const line = LINES.indexOf(v);
+        const before = prev == null ? line : LINES.indexOf(prev);
+        LINES.forEach((row, r) => {
           const c = s.cells[row][q];
-          const on = lineRow(v) === row;
+          const on = r === line;
           c.classList.toggle('on', on);
-          // Vertical pen strokes where the line moves between WORK and REST.
-          c.classList.toggle('drop', on && prev != null && lineRow(prev) !== row);
-          c.classList.toggle('end', on && next != null && lineRow(next) !== row);
-          // Rest that isn't stationary is drawn as a dashed line.
-          c.classList.toggle('ns', on && v === 'N');
+          // Where the line steps to another line, a vertical pen stroke at the left edge of this
+          // block: half on the line it leaves, half on the line it reaches, and right through the
+          // middle line when it jumps between WORK and NOT STATIONARY.
+          c.classList.toggle('arrive-up', on && before < line);
+          c.classList.toggle('arrive-down', on && before > line);
+          c.classList.toggle('leave-up', !on && r === before && line < before);
+          c.classList.toggle('leave-down', !on && r === before && line > before);
+          c.classList.toggle('pass', !on && r > Math.min(before, line) && r < Math.max(before, line));
           c.classList.toggle('breach', on && row === 'W' && breachSlots.has(i));
           c.classList.toggle('longnight', on && row === 'W' && result.longNight.has(i));
           c.title = `${fmtTime(i)}–${clock(i + 1)}`;
-        }
+        });
         const x = s.cells.X[q];
         const n = breachSlots.get(i);
         x.classList.toggle('on', n != null);
@@ -558,6 +524,7 @@
       }
       s.totals.W.textContent = formatHours(work);
       s.totals.R.textContent = formatHours(rest);
+      s.totals.N.textContent = formatHours(moving);
       const pageBreaches = result.breaches.filter((b) => Math.floor(b.slots[0] / SLOTS_PER_DAY) === p);
       s.totals.X.textContent = pageBreaches.length ? String(pageBreaches.length) : '';
       s.sheet.classList.toggle('has-breach', pageBreaches.length > 0);
@@ -596,7 +563,7 @@
     const start = planStart();
     const picked = start.custom ? start.from : -1;
     sheets.forEach((s, p) => {
-      for (const row of ['W', 'R', 'X']) {
+      for (const row of ['W', 'R', 'N', 'X']) {
         s.cells[row].forEach((c, q) => {
           c.classList.toggle('now', p * SLOTS_PER_DAY + q === now);
           c.classList.toggle('plan-start', p * SLOTS_PER_DAY + q === picked);
@@ -796,7 +763,7 @@
     const [from, to] = b ? breachWindow(b) : [-1, -1];
     const own = new Set(b ? b.slots : []);
     sheets.forEach((s, p) => {
-      for (const row of ['W', 'R', 'X']) {
+      for (const row of ['W', 'R', 'N', 'X']) {
         s.cells[row].forEach((c, q) => {
           const i = p * SLOTS_PER_DAY + q;
           const inside = i >= from && i < to;
