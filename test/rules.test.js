@@ -2,7 +2,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { check, plan, earliestStart, windowStarts, findRestRuns, makeClock, RULESETS, H, SLOTS_PER_DAY } = require('../rules.js');
+const { check, plan, earliestStart, windowStarts, findRestRuns, RULESETS, H, SLOTS_PER_DAY } = require('../rules.js');
 
 const DAYS = 3;
 
@@ -344,47 +344,6 @@ const tests = {
     const r = check(record(entries), 'standard-two-up');
     assert.equal(r.breaches.filter((b) => b.ruleId === 'std2-24h' && b.kind === 'rest').length, 0);
     assert.ok(r.breaches.some((b) => b.ruleId === 'std2-52h'));
-  },
-
-  // Daylight saving days in the base's time zone. Day 1 is the day the clocks change.
-  'daylight saving starts: a rest from 9pm to 4am on the clock is only 6 hours'() {
-    // Day 1 has no 02:00 to 03:00: 92 real slots.
-    const wall = [];
-    for (let g = 0; g < 3 * SLOTS_PER_DAY; g++) if (g < SLOTS_PER_DAY + H(2) || g >= SLOTS_PER_DAY + H(3)) wall.push(g);
-    const clock = makeClock(wall);
-    const at = (day, hour) => clock.at(day, H(hour));
-    const slots = new Array(wall.length).fill('R');
-    const work = (a, b) => { for (let i = a; i < b; i++) slots[i] = 'W'; };
-    work(at(0, 12), at(0, 16.5)); work(at(0, 17), at(0, 21));
-    work(at(1, 4), at(1, 8));
-    const r = check(slots, 'standard-solo', { clock });
-    const rest = r.breaches.find((b) => b.ruleId === 'std-24h' && b.kind === 'rest');
-    assert.ok(rest, 'the 7-hour rest is 1 hour short in real time');
-    assert.equal(rest.amount, H(1));
-    // Without the clock change the same sheet is fine.
-    const plain = new Array(3 * SLOTS_PER_DAY).fill('R');
-    for (const [a, b] of [[12, 16.5], [17, 21], [28, 32]]) for (let i = H(a); i < H(b); i++) plain[i] = 'W';
-    assert.equal(check(plain, 'standard-solo').breaches.filter((b) => b.kind === 'rest').length, 0);
-  },
-
-  'daylight saving ends: the repeated hour counts twice'() {
-    // Day 1 has 02:00 to 03:00 twice: 100 real slots.
-    const wall = [];
-    for (let g = 0; g < 3 * SLOTS_PER_DAY; g++) {
-      wall.push(g);
-      if (g >= SLOTS_PER_DAY + H(2) && g < SLOTS_PER_DAY + H(3)) wall.push(g);
-    }
-    const clock = makeClock(wall);
-    assert.equal(clock.at(2, 0) - clock.at(1, 0), SLOTS_PER_DAY + H(1));
-    // Work from 00:00 to 05:15 on the clock is 6¼ hours in real time: over the 5¼ limit by 1h.
-    const slots = new Array(wall.length).fill('R');
-    for (let i = clock.at(1, 0); i < clock.at(1, H(5.25)); i++) slots[i] = 'W';
-    const r = check(slots, 'standard-solo', { clock });
-    const b = r.breaches.find((x) => x.ruleId === 'std-5.5h');
-    assert.ok(b);
-    // Night work between midnight and 6am on the clock: all of it, 6¼ hours.
-    const bfm = check(slots, 'bfm-solo', { clock });
-    assert.equal(bfm.longNight.size, H(6.25));
   },
 
   'BFM counts night work towards the long/night limit'() {

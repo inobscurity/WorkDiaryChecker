@@ -26,11 +26,6 @@ when work ran overnight into it: every rule is then checked across that midnight
 has three lines: **WORK**, **REST** (stationary) and **REST NOT STATIONARY** (in a seat, or a
 moving sleeper berth for two-up drivers); only stationary rest counts for the major rest breaks.
 
-**Base time zone** sets the state or territory whose time the diary is kept in, as the NHVR
-requires. The time now, today's date and the plan follow the base's clock even when the phone is
-elsewhere. On the days daylight saving starts or ends at the base, the skipped hour is greyed out
-and the repeated hour counts twice, so every rule counts real time.
-
 It runs in any modern browser, on a phone, tablet or computer. Entries stay on the device; nothing
 is sent anywhere.
 
