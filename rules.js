@@ -447,7 +447,7 @@
               const amount = total - sum;
               const flagged = workSlotsIn(work, s, end);
               findings.push({
-                kind: 'rest', start: s, end, amount, slots: [flagged[flagged.length - 1] ?? end - 1],
+                kind: 'rest', inBlocks: true, start: s, end, amount, slots: [flagged[flagged.length - 1] ?? end - 1],
                 ...riskOf(rule, 'rest', amount, sum),
                 message: `${formatDuration(sum)} rest in blocks of at least ${formatDuration(block)} in ${range}, besides the 24-hour rest — ${formatDuration(total)} is required (${formatDuration(amount)} short).`,
               });
