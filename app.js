@@ -174,8 +174,12 @@
     confirmButton($('#example'), 'Replace entries?', () => state.slots.includes('W'), loadExample);
     confirmButton($('#clear'), 'Tap again to clear', () => true, () => {
       // Back to a fresh start: today as the middle sheet, the time now for the plan, no day
-      // before, and empty sheets. The driver's name and licence number are kept.
+      // before, no driver details, and empty sheets.
       const fresh = defaultState();
+      state.driver = '';
+      state.licence = '';
+      $('#driver').value = '';
+      $('#licence').value = '';
       state.slots = fresh.slots;
       state.changes = {};
       state.prior = {};
