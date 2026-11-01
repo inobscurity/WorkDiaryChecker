@@ -225,12 +225,47 @@
     return runs;
   }
 
+  // Slots count real time, 15 minutes each. The clock says which day and time of day a slot is,
+  // and where a time of day falls. By default every day has 96 slots; on a daylight saving day
+  // in the base's time zone it has 92 or 100, and the app passes a clock that knows that.
+  //   at(d, x)  the slot at x slots after midnight on day d (x can run past 96 into later days)
+  //   day(i)    the day of slot i
+  //   slot(i)   the time of day of slot i, in slots after midnight
+  const DEFAULT_CLOCK = {
+    at: (d, x) => d * SLOTS_PER_DAY + x,
+    day: (i) => Math.floor(i / SLOTS_PER_DAY),
+    slot: (i) => ((i % SLOTS_PER_DAY) + SLOTS_PER_DAY) % SLOTS_PER_DAY,
+  };
+
+  // A clock for a record whose real slots map to times on the sheets: wall[r] is the sheet slot
+  // (day * 96 + time of day) for real slot r. A skipped hour has no real slots; a repeated hour
+  // has two real slots per sheet slot. Before and after the record, days have 96 slots.
+  function makeClock(wall) {
+    const R = wall.length;
+    const lastWall = R ? wall[R - 1] : -1;
+    const firstReal = [];
+    for (let r = R - 1; r >= 0; r--) firstReal[wall[r]] = r;
+    // A sheet slot with no real slot (a skipped hour) falls at the next real slot.
+    for (let g = lastWall; g >= 0; g--) if (firstReal[g] == null) firstReal[g] = firstReal[g + 1] != null ? firstReal[g + 1] : R;
+    const wallOf = (i) => (i < 0 ? i : i < R ? wall[i] : lastWall + 1 + (i - R));
+    return {
+      at: (d, x) => {
+        const g = d * SLOTS_PER_DAY + x;
+        if (g < 0) return g;
+        if (g > lastWall) return R + (g - lastWall - 1);
+        return firstReal[g];
+      },
+      day: (i) => Math.floor(wallOf(i) / SLOTS_PER_DAY),
+      slot: (i) => ((wallOf(i) % SLOTS_PER_DAY) + SLOTS_PER_DAY) % SLOTS_PER_DAY,
+    };
+  }
+
   // A night rest break: 7 continuous hours rest between 10pm and 8am, or 24 continuous hours.
-  function isNightRest(run) {
+  function isNightRest(run, clock = DEFAULT_CLOCK) {
     if (run.end - run.start >= H(24)) return true;
-    for (let d = Math.floor(run.start / SLOTS_PER_DAY) - 1; d * SLOTS_PER_DAY <= run.end; d++) {
-      const a = d * SLOTS_PER_DAY + NIGHT_REST_FROM;
-      const b = d * SLOTS_PER_DAY + NIGHT_REST_TO;
+    for (let d = clock.day(run.start) - 1; clock.at(d, 0) <= run.end; d++) {
+      const a = clock.at(d, NIGHT_REST_FROM);
+      const b = clock.at(d, NIGHT_REST_TO);
       if (Math.min(run.end, b) - Math.max(run.start, a) >= NIGHT_REST_LENGTH) return true;
     }
     return false;
@@ -243,10 +278,10 @@
   // Time before the record counts as rest, so the first work also starts a period. If a period
   // ends without the required rest break, later periods are counted from the end of any rest
   // break, and from where the previous period ended.
-  function windowStarts(restRuns, rule, n) {
+  function windowStarts(restRuns, rule, n, clock = DEFAULT_CLOCK) {
     const relevant = (run) => run.start === 0 ||
       (rule.relevantRest != null && run.end - run.start >= rule.relevantRest) ||
-      (rule.relevantNight && isNightRest(run));
+      (rule.relevantNight && isNightRest(run, clock));
     const starts = new Set();
     if (!restRuns.length || restRuns[0].start > 0) starts.add(0);
     for (const run of restRuns) {
@@ -290,13 +325,13 @@
     return out;
   }
 
-  function longNightSlots(work, restRuns, rule24) {
+  function longNightSlots(work, restRuns, rule24, clock) {
     const set = new Set();
     work.forEach((w, i) => {
-      if (w && i % SLOTS_PER_DAY < NIGHT_WORK_TO) set.add(i);
+      if (w && clock.slot(i) < NIGHT_WORK_TO) set.add(i);
     });
     if (rule24) {
-      for (const s of windowStarts(restRuns, rule24, work.length)) {
+      for (const s of windowStarts(restRuns, rule24, work.length, clock)) {
         let cum = 0;
         for (let i = s; i < Math.min(s + H(24), work.length); i++) {
           if (work[i] && ++cum > LONG_WORK_AFTER) set.add(i);
@@ -328,6 +363,7 @@
     const ruleset = RULESETS[rulesetId];
     if (!ruleset) throw new Error(`Unknown work option: ${rulesetId}`);
     const fmtTime = opts.fmtTime || defaultTime;
+    const clock = opts.clock || DEFAULT_CLOCK;
     const prior = opts.prior || {};
     const n = slots.length;
     const work = slots.map((v) => v === 'W');
@@ -357,7 +393,7 @@
 
     if (ruleset.rules.some((r) => r.maxLongNight != null)) {
       const rule24 = ruleset.rules.find((r) => r.period === H(24) && r.maxWork != null);
-      result.longNight = longNightSlots(work, runsFor(rule24), rule24);
+      result.longNight = longNightSlots(work, runsFor(rule24), rule24, clock);
     }
 
     for (const rule of ruleset.rules) {
@@ -401,7 +437,7 @@
           Object.assign(f, riskOf(rule, 'work', f.amount, f.total));
         }
       } else {
-        for (const s of windowStarts(runsFor(rule), rule, n)) {
+        for (const s of windowStarts(runsFor(rule), rule, n, clock)) {
           const end = s + rule.period;
           const complete = end <= knownEnd;
           const range = `the ${formatPeriod(rule.period)} from ${fmtTime(s)}`;
@@ -478,9 +514,9 @@
 
           if (rule.nightRests && complete) {
             const ok = [];
-            for (let d = Math.floor(s / SLOTS_PER_DAY) - 1; d * SLOTS_PER_DAY < end; d++) {
-              const a = d * SLOTS_PER_DAY + NIGHT_REST_FROM;
-              const b = d * SLOTS_PER_DAY + NIGHT_REST_TO;
+            for (let d = clock.day(s) - 1; clock.at(d, 0) < end; d++) {
+              const a = clock.at(d, NIGHT_REST_FROM);
+              const b = clock.at(d, NIGHT_REST_TO);
               if (a < s || b > end) continue;
               ok[d] = longestRestIn(statRuns, a, b) >= NIGHT_REST_LENGTH ||
                 statRuns.some((r) => r.end - r.start >= H(24) && r.start < b && r.end > a);
@@ -492,7 +528,7 @@
               // Graded by the longest rest in a night that fell short of a night rest break.
               let best = 0;
               ok.forEach((v, d) => {
-                if (!v) best = Math.max(best, longestRestIn(statRuns, d * SLOTS_PER_DAY + NIGHT_REST_FROM, d * SLOTS_PER_DAY + NIGHT_REST_TO));
+                if (!v) best = Math.max(best, longestRestIn(statRuns, clock.at(d, NIGHT_REST_FROM), clock.at(d, NIGHT_REST_TO)));
               });
               const flagged = workSlotsIn(work, s, end);
               findings.push({
@@ -515,7 +551,7 @@
       // Anything recorded before `priorStart` is already in the total, so it isn't added again.
       const key = priorKey(rule);
       const priorStart = opts.priorStart || 0;
-      const firstDay = Math.min(n, priorStart + (opts.priorThrough || 2) * SLOTS_PER_DAY);
+      const firstDay = Math.min(n, opts.priorEnd != null ? opts.priorEnd : priorStart + (opts.priorThrough || 2) * SLOTS_PER_DAY);
       if (key && prior[key] != null && rule.period > firstDay - priorStart) {
         const longNight = rule.maxLongNight != null;
         const max = longNight ? rule.maxLongNight : rule.maxWork;
@@ -558,9 +594,9 @@
       if (!rule.period || rule.period < DAYS(7)) return out;
       const days = rule.period / SLOTS_PER_DAY;
       const priorStart = opts.priorStart || 0;
-      const end = Math.min(n, priorStart + (opts.priorThrough || 2) * SLOTS_PER_DAY);
+      const end = Math.min(n, opts.priorEnd != null ? opts.priorEnd : priorStart + (opts.priorThrough || 2) * SLOTS_PER_DAY);
       const start = end - rule.period;
-      const daysBefore = (priorStart - start) / SLOTS_PER_DAY;
+      const daysBefore = days - (opts.priorThrough || 2);
       const range = `the ${formatPeriod(rule.period)} from ${fmtTime(start)}`;
       const lastWork = workSlotsIn(work, priorStart, end).slice(-1);
 
@@ -609,15 +645,15 @@
       if (before && before.count != null && rule.nightRests) {
         historyUsed.add(rule.id);
         const nightOk = (k) => {
-          const a = k * SLOTS_PER_DAY + NIGHT_REST_FROM;
-          const b = k * SLOTS_PER_DAY + NIGHT_REST_TO;
+          const a = clock.at(k, NIGHT_REST_FROM);
+          const b = clock.at(k, NIGHT_REST_TO);
           return longestRestIn(statRuns, a, b) >= NIGHT_REST_LENGTH ||
             statRuns.some((r) => r.end - r.start >= H(24) && r.start < b && r.end > a);
         };
         // Nights that start on the sheets and end by 8am on the period's last day.
-        const firstDay = priorStart / SLOTS_PER_DAY;
+        const firstDay = clock.day(priorStart);
         const ok = [];
-        for (let k = firstDay; k * SLOTS_PER_DAY + NIGHT_REST_TO <= end; k++) ok.push(nightOk(k));
+        for (let k = firstDay; clock.at(k, NIGHT_REST_TO) <= end; k++) ok.push(nightOk(k));
         const onSheets = ok.filter(Boolean).length;
         const total = before.count + onSheets;
         // The night into the first sheet is part of the days before; it pairs with the first
@@ -708,6 +744,6 @@
 
   return {
     SLOT_MINUTES, SLOTS_PER_DAY, RULESETS, H,
-    check, plan, earliestStart, priorKey, windowStarts, findRestRuns, describeRule, formatDuration, formatPeriod, ruleLabel,
+    check, plan, earliestStart, priorKey, makeClock, windowStarts, findRestRuns, describeRule, formatDuration, formatPeriod, ruleLabel,
   };
 });

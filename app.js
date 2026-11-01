@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, priorKey, describeRule, formatDuration, formatPeriod } = window.EWD;
+  const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, priorKey, makeClock, describeRule, formatDuration, formatPeriod } = window.EWD;
 
   // Four days are kept: an optional "day before" sheet (page 0), then the three daily sheets
   // (pages 1 to 3). While the day before is hidden it is all rest, which is how time before the
@@ -12,7 +12,19 @@
   const MIDDLE = 2;
   const N = PAGES * SLOTS_PER_DAY;
   // The earlier-work totals cover the days before the first sheet and end with the middle sheet.
-  const PRIOR = { priorStart: FIRST * SLOTS_PER_DAY, priorThrough: MIDDLE - FIRST + 1 };
+  const PRIOR_DAYS = MIDDLE - FIRST + 1;
+
+  // Times are counted in the time zone of the driver's base.
+  const TIME_ZONES = [
+    ['Australia/Brisbane', 'Queensland'],
+    ['Australia/Sydney', 'New South Wales / ACT'],
+    ['Australia/Melbourne', 'Victoria'],
+    ['Australia/Hobart', 'Tasmania'],
+    ['Australia/Adelaide', 'South Australia'],
+    ['Australia/Broken_Hill', 'Broken Hill (on South Australian time)'],
+    ['Australia/Darwin', 'Northern Territory'],
+    ['Australia/Perth', 'Western Australia'],
+  ];
   const STORAGE_KEY = 'ewd-checker-v1';
   const HOUR_LABELS = ['Mid', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
     'Noon', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
@@ -36,14 +48,78 @@
     return isoDate(new Date(y, m - 1, d + n));
   }
 
+  // ---- Base time zone -----------------------------------------------------------------------
+
+  function phoneZone() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // The phone's zone if it is one of the list, otherwise New South Wales.
+  function guessZone() {
+    const zone = phoneZone();
+    return TIME_ZONES.some(([id]) => id === zone) ? zone : 'Australia/Sydney';
+  }
+
+  // Set from the saved state once it is loaded, and when the driver picks a zone.
+  let zoneSetting = null;
+
+  function baseZone() {
+    return zoneSetting || guessZone();
+  }
+
+  function zoneName(zone = baseZone()) {
+    const found = TIME_ZONES.find(([id]) => id === zone);
+    return found ? found[1] : zone;
+  }
+
+  const partsFormats = {};
+
+  // The date and time in a time zone at an instant (milliseconds since 1970).
+  function zonedParts(ms, zone = baseZone()) {
+    if (!partsFormats[zone]) {
+      partsFormats[zone] = new Intl.DateTimeFormat('en-AU', {
+        timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      });
+    }
+    const p = {};
+    for (const { type, value } of partsFormats[zone].formatToParts(new Date(ms))) p[type] = Number(value);
+    return { y: p.year, m: p.month, d: p.day, h: p.hour % 24, min: p.minute };
+  }
+
+  // Minutes the zone is ahead of UTC at an instant.
+  function zoneOffset(ms, zone) {
+    const p = zonedParts(ms, zone);
+    return Math.round((Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - Math.floor(ms / 60000) * 60000) / 60000);
+  }
+
+  // The instant of midnight at the start of a date in a zone. Australian clocks change at 2am or
+  // 3am, so midnight is always a single instant.
+  function zonedMidnight(iso, zone = baseZone()) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const guess = Date.UTC(y, m - 1, d);
+    const first = guess - zoneOffset(guess, zone) * 60000;
+    return guess - zoneOffset(first, zone) * 60000;
+  }
+
+  // Today's date at the base.
+  function todayISO() {
+    const p = zonedParts(Date.now());
+    return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+  }
+
   // The middle sheet is today unless the driver picks another date, so the first is yesterday.
   function yesterdayISO() {
-    return addDays(isoDate(new Date()), -1);
+    return addDays(todayISO(), -1);
   }
 
   function defaultState() {
     return {
       ruleset: 'standard-solo',
+      baseTz: baseZone(),
       startDate: yesterdayISO(),
       dateChosen: false,
       driver: '',
@@ -73,6 +149,7 @@
           .map(([i, v]) => [String(Number(i) + SLOTS_PER_DAY), v]));
       }
       if (saved.slots.length !== N) return null;
+      if (TIME_ZONES.some(([id]) => id === saved.baseTz)) zoneSetting = saved.baseTz;
       const state = { ...defaultState(), ...saved };
       state.history = { ...defaultState().history, ...(saved.history || {}) };
       // Every block is work, stationary rest ('R') or rest that isn't stationary ('N'). Older
@@ -96,6 +173,7 @@
 
   const saved = load();
   let state = saved || defaultState();
+  zoneSetting = state.baseTz;
   let result = null;
   // Which breach each marked slot belongs to, and the breach picked to explain (by key).
   let breachAt = new Map();
@@ -128,19 +206,95 @@
     return `${formatDate(pageDate(Math.floor(i / SLOTS_PER_DAY)))} ${clock(i)}`;
   }
 
-  // The 15-minute block the time now falls in, or -1 when today is not on the sheets.
-  function nowIndex() {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const day = Math.round((today - pageDate(0)) / 86400000);
-    if (day < 0 || day >= PAGES) return -1;
-    return day * SLOTS_PER_DAY + Math.floor((now.getHours() * 60 + now.getMinutes()) / SLOT_MINUTES);
+  // ---- Real time and the sheets -------------------------------------------------------------
+  //
+  // The sheets show clock time at the base: 96 boxes a day. The rules count real time. They
+  // differ only on a daylight saving day: when clocks go forward, 2am to 3am never happens (92
+  // real slots); when they go back, 2am to 3am happens twice (100). The timeline maps between
+  // the two: wall[r] is the sheet box for real slot r.
+
+  let timeline = null;
+
+  function getTimeline() {
+    const key = `${state.startDate}|${baseZone()}`;
+    if (timeline && timeline.key === key) return timeline;
+    const wall = [];
+    const dayStart = [];
+    const step = SLOT_MINUTES * 60000;
+    for (let p = 0; p < PAGES; p++) {
+      dayStart.push(wall.length);
+      const from = zonedMidnight(isoDate(pageDate(p)));
+      const to = zonedMidnight(isoDate(pageDate(p + 1)));
+      for (let t = from; t < to; t += step) {
+        const z = zonedParts(t);
+        wall.push(p * SLOTS_PER_DAY + Math.floor((z.h * 60 + z.min) / SLOT_MINUTES));
+      }
+    }
+    dayStart.push(wall.length);
+    // The first real slot of each sheet box; -1 for a box that never happens.
+    const real = new Array(N).fill(-1);
+    for (let r = wall.length - 1; r >= 0; r--) real[wall[r]] = r;
+    timeline = {
+      key, wall, real, dayStart, clock: makeClock(wall), R: wall.length,
+      midnight: zonedMidnight(isoDate(pageDate(0))),
+      dayLength: Array.from({ length: PAGES }, (_, p) => dayStart[p + 1] - dayStart[p]),
+    };
+    return timeline;
   }
 
-  function slotDate(i) {
-    const d = pageDate(Math.floor(i / SLOTS_PER_DAY));
-    d.setMinutes((i % SLOTS_PER_DAY) * SLOT_MINUTES);
-    return d;
+  // Sheet box of a real slot. Before and after the four days, a day is 96 slots.
+  function toGrid(r) {
+    const t = getTimeline();
+    if (r < 0) return r;
+    return r < t.R ? t.wall[r] : N + (r - t.R);
+  }
+
+  // Real slot of a sheet box. A box that never happens maps to the next one that does.
+  function toReal(g) {
+    const t = getTimeline();
+    if (g < 0) return g;
+    if (g >= N) return t.R + (g - N);
+    for (let k = g; k < N; k++) if (t.real[k] >= 0) return t.real[k];
+    return t.R;
+  }
+
+  // The sheets as real time, for the rules.
+  function realSlots() {
+    const t = getTimeline();
+    return t.wall.map((g) => state.slots[g]);
+  }
+
+  // The real slot the time now falls in, counted from midnight before the day before.
+  function nowReal() {
+    return Math.floor((Date.now() - getTimeline().midnight) / (SLOT_MINUTES * 60000));
+  }
+
+  // The sheet box the time now falls in, or -1 when today is not on the sheets.
+  function nowIndex() {
+    const r = nowReal();
+    const t = getTimeline();
+    return r >= 0 && r < t.R ? t.wall[r] : -1;
+  }
+
+  // Options shared by every call to the rules.
+  function ruleOpts() {
+    const t = getTimeline();
+    return {
+      prior: priorSlots(),
+      history: historyOpts(),
+      priorStart: t.dayStart[FIRST],
+      priorEnd: t.dayStart[MIDDLE + 1],
+      priorThrough: PRIOR_DAYS,
+      clock: t.clock,
+    };
+  }
+
+  // A breach found in real time, with its blocks and period moved onto the sheets.
+  function onSheets(b) {
+    const out = { ...b, slots: [...new Set(b.slots.map(toGrid))] };
+    if (b.start != null) out.start = toGrid(b.start);
+    if (b.end != null) out.end = toGrid(b.end);
+    return out;
   }
 
   // ---- Building the sheets ------------------------------------------------------------------
@@ -148,6 +302,21 @@
   const sheets = [];
 
   function buildControls() {
+    const zoneSelect = $('#base-tz');
+    for (const [id, name] of TIME_ZONES) {
+      const opt = el('option', null, name);
+      opt.value = id;
+      zoneSelect.append(opt);
+    }
+    zoneSelect.value = baseZone();
+    zoneSelect.addEventListener('change', () => {
+      zoneSetting = zoneSelect.value;
+      state.baseTz = zoneSelect.value;
+      // Today may be a different date at the new base.
+      if (!state.dateChosen) state.startDate = yesterdayISO();
+      update(true);
+    });
+
     const select = $('#ruleset');
     for (const [id, rs] of Object.entries(RULESETS)) {
       const opt = el('option', null, rs.name);
@@ -208,7 +377,7 @@
   function setMiddleDate(iso) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return;
     state.startDate = addDays(iso, -1);
-    state.dateChosen = iso !== isoDate(new Date());
+    state.dateChosen = iso !== todayISO();
     update(true);
   }
 
@@ -228,7 +397,7 @@
       if (document.activeElement !== input) input.value = iso;
     });
     const today = $('#middle-today');
-    if (today) today.hidden = iso === isoDate(new Date());
+    if (today) today.hidden = iso === todayISO();
   }
 
   function confirmButton(button, question, needsConfirm, action) {
@@ -300,7 +469,7 @@
       const today = el('button', 'date-today', 'Today');
       today.type = 'button';
       today.id = 'middle-today';
-      today.addEventListener('click', () => setMiddleDate(isoDate(new Date())));
+      today.addEventListener('click', () => setMiddleDate(todayISO()));
       edit.append(input, today);
       dateBox.append(edit);
       dateBox.classList.add('meta-box-date');
@@ -310,6 +479,8 @@
     box('Work option', options);
     box('Vehicle registration', rego);
     const twoUpBox = box('Two-up driver name', twoUp);
+    const zone = el('span', 'meta-value');
+    box('Time zone of base', zone);
     sheet.append(meta);
 
     // The 24-hour graph: hour numbers, a WORK line, a REST line and a line for breaches.
@@ -342,6 +513,9 @@
     scroll.append(grid);
     sheet.append(scroll);
     attachPainting(grid);
+    const dst = el('p', 'dst-note');
+    dst.hidden = true;
+    sheet.append(dst);
 
 
     // Rest and work changes, like the table under the graph in the diary.
@@ -360,7 +534,7 @@
     sheet.append(breaches);
 
     $('#sheets').append(sheet);
-    sheets.push({ sheet, date, driver, licence, options, twoUpBox, rego, twoUp, cells, totals, changesBody, breaches });
+    sheets.push({ sheet, date, driver, licence, options, zone, twoUpBox, rego, twoUp, cells, totals, changesBody, breaches, dst });
   }
 
   // ---- Entering time ------------------------------------------------------------------------
@@ -414,7 +588,9 @@
 
   function paint(from, to, value) {
     let changed = false;
+    const t = getTimeline();
     for (let i = from; i <= to; i++) {
+      if (t.real[i] < 0) continue; // an hour skipped when daylight saving starts
       if (state.slots[i] !== value) changed = true;
       state.slots[i] = value;
     }
@@ -500,7 +676,8 @@
   }
 
   function render(full) {
-    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), history: historyOpts(), ...PRIOR });
+    const found = check(realSlots(), state.ruleset, { fmtTime: (r) => fmtTime(toGrid(r)), ...ruleOpts() });
+    result = { ...found, breaches: found.breaches.map(onSheets), longNight: new Set([...found.longNight].map(toGrid)) };
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
@@ -541,6 +718,26 @@
         x.classList.toggle('on', n != null);
         x.title = n != null ? result.breaches[n].message : '';
       }
+      // Totals are in real time: a daylight saving day has 23 or 25 hours.
+      const t = getTimeline();
+      work = 0;
+      rest = 0;
+      moving = 0;
+      for (let r = t.dayStart[p]; r < t.dayStart[p + 1]; r++) {
+        const v = state.slots[t.wall[r]];
+        if (v === 'W') work++;
+        else if (v === 'N') moving++;
+        else rest++;
+      }
+      s.cells.W.forEach((c, q) => {
+        const missing = t.real[p * SLOTS_PER_DAY + q] < 0;
+        for (const row of ['W', 'R', 'N', 'X']) s.cells[row][q].classList.toggle('missing', missing);
+      });
+      const hours = t.dayLength[p] / (60 / SLOT_MINUTES);
+      s.dst.hidden = hours === 24;
+      s.dst.textContent = hours < 24
+        ? `Daylight saving starts: clocks go forward at 2am, so 2am to 3am doesn't happen (greyed out). This day has 23 hours.`
+        : `Daylight saving ends: clocks go back at 3am, so 2am to 3am happens twice. What you mark there counts for both hours. This day has 25 hours.`;
       s.totals.W.textContent = formatHours(work);
       // Total rest includes rest that isn't stationary, which is also shown on its own line.
       s.totals.R.textContent = formatHours(rest + moving);
@@ -556,6 +753,7 @@
       s.date.textContent = formatDate(pageDate(p), true);
       if (p === MIDDLE) syncMiddleDate();
       s.driver.textContent = state.driver || '—';
+      s.zone.textContent = zoneName();
       s.licence.textContent = state.licence || '—';
       s.options.replaceChildren(...OPTIONS.map(([id, label]) => {
         const o = el('span', `option${ruleset.option === id ? ' ticked' : ''}`, label);
@@ -642,7 +840,7 @@
   function syncPlanControls(from, custom) {
     const day = $('#plan-day');
     const time = $('#plan-time');
-    const todayIso = isoDate(new Date());
+    const todayIso = todayISO();
     day.replaceChildren(...SHEETS.map((p) => {
       const iso = isoDate(pageDate(p));
       const opt = el('option', null, `${formatDate(pageDate(p))}${iso === todayIso ? ' (today)' : ''}`);
@@ -681,30 +879,37 @@
       list.replaceChildren();
       return;
     }
-    const now = new Date();
     const working = state.slots[from] === 'W';
+    const z = zonedParts(Date.now());
+    const time = `${String(z.h).padStart(2, '0')}:${String(z.min).padStart(2, '0')}`;
+    // When the phone is in another time zone, say what its clock shows too.
+    const phone = new Date();
+    const phoneTime = `${String(phone.getHours()).padStart(2, '0')}:${String(phone.getMinutes()).padStart(2, '0')}`;
+    const away = phoneTime !== time ? ` (${phoneTime} on this phone)` : '';
     if (custom) {
       lead.textContent = `From ${fmtTime(from)}${working ? ', where you are marked on work' : ''}, if you work without a break:`;
     } else {
-      const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      lead.textContent = `It's ${time}${working ? ' and you are on work' : ''}. If you work from now without a break:`;
+      lead.textContent = `It's ${time} ${zoneName()} time${away}${working ? ', and you are on work' : ''}. If you work from now without a break:`;
     }
     const startPage = Math.floor(from / SLOTS_PER_DAY);
     const duration = (minutes) => (minutes < 60
       ? `${minutes} min`
       : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`);
-    // From the time now, count down; from a picked time, say how long after the start.
-    const whenText = (i, base) => {
-      const page = Math.floor(i / SLOTS_PER_DAY);
+    const nowMinutes = (Date.now() - getTimeline().midnight) / 60000;
+    // Times are real slots here; shown as the time on the sheets. From the time now, count
+    // down; from a picked time, say how long after the start.
+    const whenText = (r, base) => {
+      const page = Math.floor(toGrid(r) / SLOTS_PER_DAY);
       const left = custom
-        ? `after ${duration((i - base) * SLOT_MINUTES)}`
-        : `in ${duration(Math.max(0, Math.round((slotDate(i) - now) / 60000)))}`;
+        ? `after ${duration((r - base) * SLOT_MINUTES)}`
+        : `in ${duration(Math.max(0, Math.round(r * SLOT_MINUTES - nowMinutes)))}`;
       return `${page !== startPage ? `${formatDate(pageDate(page))} · ` : ''}${left}`;
     };
-    const row = (cls, time, sub, action, detail) => {
+    const timeOf = (r) => clock(toGrid(r));
+    const row = (cls, timeText, sub, action, detail) => {
       const li = el('li', `plan-item ${cls}`);
       const when = el('div', 'plan-when');
-      when.append(el('strong', 'plan-time', time));
+      when.append(el('strong', 'plan-time', timeText));
       if (sub) when.append(el('span', 'plan-left', sub));
       const text = el('div', 'plan-text');
       text.append(el('strong', null, action), el('span', null, detail));
@@ -712,33 +917,35 @@
       return li;
     };
 
-    let slots = state.slots;
-    let base = from;
-    const opts = { prior: priorSlots(), history: historyOpts(), ...PRIOR };
-    let items = plan(slots, state.ruleset, from, opts);
+    const opts = ruleOpts();
+    let slots = realSlots();
+    const start = custom ? toReal(from) : nowReal();
+    let base = start;
+    let items = plan(slots, state.ruleset, start, opts);
     const rows = [];
 
     // If no more work is allowed at the start time, say when it is, then plan from there.
-    if (items.length && items[0].stopAt === from) {
+    if (items.length && items[0].stopAt === start) {
       const blocker = items[0];
       const d = describeRule(blocker.rule);
       const limit = blocker.kind === 'rest' || blocker.kind === 'night' ? d.rest : d.work.toLowerCase();
       const reason = `${d.period}: ${limit}.`;
-      const resume = earliestStart(slots, state.ruleset, from, opts);
+      const resume = earliestStart(slots, state.ruleset, start, opts);
       if (resume < 0) {
         rows.push(row('over first', custom ? clock(from) : 'Now', '', blocker.overNow ? 'Over the limit: rest' : 'Rest',
           `No more work is allowed before the end of the last sheet. ${reason}`));
         list.replaceChildren(...rows);
         return;
       }
-      const day = Math.floor(resume / SLOTS_PER_DAY) !== startPage ? ` on ${formatDate(pageDate(Math.floor(resume / SLOTS_PER_DAY)))}` : '';
-      rows.push(row('over first', clock(resume), whenText(resume, from),
-        blocker.overNow ? `Over the limit: rest until ${clock(resume)}` : `Rest until ${clock(resume)}`,
-        `You can't start work again until ${clock(resume)}${day}. ${reason}`));
-      slots = slots.map((v, i) => (i >= from && i < resume ? 'R' : v));
+      const resumePage = Math.floor(toGrid(resume) / SLOTS_PER_DAY);
+      const day = resumePage !== startPage ? ` on ${formatDate(pageDate(resumePage))}` : '';
+      rows.push(row('over first', timeOf(resume), whenText(resume, start),
+        blocker.overNow ? `Over the limit: rest until ${timeOf(resume)}` : `Rest until ${timeOf(resume)}`,
+        `You can't start work again until ${timeOf(resume)}${day}. ${reason}`));
+      slots = slots.map((v, i) => (i >= start && i < resume ? 'R' : v));
       base = resume;
       items = plan(slots, state.ruleset, resume, opts);
-      if (items.length) rows.push(el('li', 'plan-then', `Then, if you work from ${clock(resume)} without a break:`));
+      if (items.length) rows.push(el('li', 'plan-then', `Then, if you work from ${timeOf(resume)} without a break:`));
     }
 
     if (!rows.length && !items.length) {
@@ -749,8 +956,8 @@
       const [action, detail] = planAction(item, custom);
       const first = !rows.length && k === 0;
       rows.push(item.overNow
-        ? row(`over${first ? ' first' : ''}`, custom ? clock(base) : 'Now', '', action, detail)
-        : row(first ? 'first' : '', clock(item.stopAt), whenText(item.stopAt, base), action, detail));
+        ? row(`over${first ? ' first' : ''}`, custom ? timeOf(base) : 'Now', '', action, detail)
+        : row(first ? 'first' : '', timeOf(item.stopAt), whenText(item.stopAt, base), action, detail));
     });
     list.replaceChildren(...rows);
   }
@@ -1018,7 +1225,7 @@
     if (q.lastRest && h.lastRestDay && h.lastRestTime) {
       const day = Math.round((new Date(`${h.lastRestDay}T00:00`) - pageDate(0)) / 86400000);
       const [hh, mm] = h.lastRestTime.split(':').map(Number);
-      out.lastLongRestEnd = day * SLOTS_PER_DAY + Math.floor((hh * 60 + mm) / SLOT_MINUTES);
+      out.lastLongRestEnd = toReal(day * SLOTS_PER_DAY + Math.floor((hh * 60 + mm) / SLOT_MINUTES));
     }
     if (q.workSince && out.lastLongRestEnd != null) {
       const since = parseHours(h.workSince, 28 * 24);

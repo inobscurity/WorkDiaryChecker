@@ -30,6 +30,10 @@
         <select id="ruleset"></select>
       </label>
       <label class="field">
+        <span>Base time zone</span>
+        <select id="base-tz"></select>
+      </label>
+      <label class="field">
         <span>Date of middle sheet</span>
         <input type="date" id="middle-date" class="middle-date-input">
       </label>
@@ -127,7 +131,8 @@
     </details>
 
     <footer class="footer">
-      <p>Times are in the time zone of the driver's base. Time is counted as on the NHVR "Counting
+      <p>Times are in the time zone of the driver's base, set at the top. On the days daylight saving
+        starts or ends there, the rules count real time: 23 or 25 hours. Time is counted as on the NHVR "Counting
         time" page: periods under 24 hours from the end of any rest break, and longer periods from the
         end of the major rest break that period requires (for example 7 hours for 24 hours, a night
         rest break for 14 days), or from the end of any rest break if that break hasn't been taken. A
