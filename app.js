@@ -523,8 +523,11 @@
         x.title = n != null ? result.breaches[n].message : '';
       }
       s.totals.W.textContent = formatHours(work);
-      s.totals.R.textContent = formatHours(rest);
+      // Total rest includes rest that isn't stationary, which is also shown on its own line.
+      s.totals.R.textContent = formatHours(rest + moving);
+      s.totals.R.title = 'Total rest, including rest that is not stationary';
       s.totals.N.textContent = formatHours(moving);
+      s.totals.N.title = 'Rest that is not stationary (already included in the total rest above)';
       const pageBreaches = result.breaches.filter((b) => Math.floor(b.slots[0] / SLOTS_PER_DAY) === p);
       s.totals.X.textContent = pageBreaches.length ? String(pageBreaches.length) : '';
       s.sheet.classList.toggle('has-breach', pageBreaches.length > 0);
