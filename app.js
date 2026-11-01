@@ -173,12 +173,25 @@
 
     confirmButton($('#example'), 'Replace entries?', () => state.slots.includes('W'), loadExample);
     confirmButton($('#clear'), 'Tap again to clear', () => true, () => {
-      state.slots = new Array(N).fill('R');
+      // Back to a fresh start: today as the middle sheet, the time now for the plan, no day
+      // before, and empty sheets. The driver's name and licence number are kept.
+      const fresh = defaultState();
+      state.slots = fresh.slots;
       state.changes = {};
       state.prior = {};
-      state.history = defaultState().history;
+      state.history = fresh.history;
+      state.startDate = fresh.startDate;
+      state.dateChosen = false;
+      state.planFrom = null;
+      state.showDayBefore = false;
+      state.pages = fresh.pages;
       state.example = false;
       clearEarlierBoxes();
+      sheets.forEach((s) => {
+        s.rego.value = '';
+        s.twoUp.value = '';
+      });
+      syncDayBeforeToggle();
       update(true);
     });
     const print = $('#print');
@@ -343,7 +356,7 @@
     sheet.append(breaches);
 
     $('#sheets').append(sheet);
-    sheets.push({ sheet, date, driver, licence, options, twoUpBox, cells, totals, changesBody, breaches });
+    sheets.push({ sheet, date, driver, licence, options, twoUpBox, rego, twoUp, cells, totals, changesBody, breaches });
   }
 
   // ---- Entering time ------------------------------------------------------------------------
@@ -408,6 +421,8 @@
 
   // ---- The day before -----------------------------------------------------------------------
 
+  let syncDayBeforeToggle = () => {};
+
   // Only needed when work ran overnight into the first sheet: with its times, every rule is
   // checked across that midnight. Removing it clears its entries, so nothing hidden is counted.
   function buildDayBeforeToggle() {
@@ -418,7 +433,7 @@
     const note = el('span', 'day-before-note');
     bar.append(button, note);
     $('#sheets').prepend(bar);
-    const label = () => {
+    syncDayBeforeToggle = () => {
       button.textContent = state.showDayBefore ? 'Remove the day before' : 'Show the day before';
       note.textContent = state.showDayBefore
         ? 'Its work is not added to the work-before totals: those already include this day.'
@@ -433,10 +448,10 @@
         }
       }
       state.showDayBefore = !state.showDayBefore;
-      label();
+      syncDayBeforeToggle();
       update(true);
     });
-    label();
+    syncDayBeforeToggle();
   }
 
   // ---- Example ------------------------------------------------------------------------------
