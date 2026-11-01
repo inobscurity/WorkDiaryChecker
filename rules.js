@@ -487,18 +487,20 @@
         result.breaches.push({ ...f, ruleId: rule.id, ruleLabel: label });
       }
 
-      // Work before the record, entered as a total for the days before the first day. With the
-      // record's first `priorThrough` days (the first two sheets by default) they make up the
-      // period, so the period checked ends with the last of those days.
+      // Work before the sheets, entered as a total for the days before the first sheet (slot
+      // `priorStart`, 0 by default). With the first `priorThrough` days of sheets (two by
+      // default) they make up the period, so the period checked ends with the last of those days.
+      // Anything recorded before `priorStart` is already in the total, so it isn't added again.
       const key = priorKey(rule);
-      const firstDay = Math.min(n, (opts.priorThrough || 2) * SLOTS_PER_DAY);
-      if (key && prior[key] != null && rule.period > firstDay) {
+      const priorStart = opts.priorStart || 0;
+      const firstDay = Math.min(n, priorStart + (opts.priorThrough || 2) * SLOTS_PER_DAY);
+      if (key && prior[key] != null && rule.period > firstDay - priorStart) {
         const longNight = rule.maxLongNight != null;
         const max = longNight ? rule.maxLongNight : rule.maxWork;
         const before = prior[key];
         let cum = before;
         const over = [];
-        for (let i = 0; i < firstDay; i++) {
+        for (let i = priorStart; i < firstDay; i++) {
           const counts = longNight ? result.longNight.has(i) : work[i];
           if (counts && ++cum > max) over.push(i);
         }

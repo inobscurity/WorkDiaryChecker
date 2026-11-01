@@ -3,8 +3,16 @@
 
   const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, priorKey, describeRule, formatDuration, formatPeriod } = window.EWD;
 
-  const PAGES = 3;
+  // Four days are kept: an optional "day before" sheet (page 0), then the three daily sheets
+  // (pages 1 to 3). While the day before is hidden it is all rest, which is how time before the
+  // sheets is counted anyway.
+  const PAGES = 4;
+  const FIRST = 1;
+  const SHEETS = [1, 2, 3];
+  const MIDDLE = 2;
   const N = PAGES * SLOTS_PER_DAY;
+  // The earlier-work totals cover the days before the first sheet and end with the middle sheet.
+  const PRIOR = { priorStart: FIRST * SLOTS_PER_DAY, priorThrough: MIDDLE - FIRST + 1 };
   const STORAGE_KEY = 'ewd-checker-v1';
   const HOUR_LABELS = ['Mid', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
     'Noon', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
@@ -47,16 +55,27 @@
       planFrom: null,
       // Earlier work typed in for the longer periods, as entered, keyed by rule (e.g. work-7).
       prior: {},
+      showDayBefore: false,
     };
   }
 
   function load() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (!saved || !Array.isArray(saved.slots) || saved.slots.length !== N || !RULESETS[saved.ruleset]) return null;
+      if (!saved || !Array.isArray(saved.slots) || !RULESETS[saved.ruleset]) return null;
+      // Saves from before the day-before sheet held three days: move them along by one.
+      if (saved.slots.length === 3 * SLOTS_PER_DAY) {
+        saved.slots = new Array(SLOTS_PER_DAY).fill('R').concat(saved.slots);
+        saved.pages = [{ rego: '', twoUp: '' }].concat(saved.pages || []);
+        saved.changes = Object.fromEntries(Object.entries(saved.changes || {})
+          .map(([i, v]) => [String(Number(i) + SLOTS_PER_DAY), v]));
+      }
+      if (saved.slots.length !== N) return null;
       const state = { ...defaultState(), ...saved };
-      // Every block is work or rest; older saves had unmarked blocks, which count as rest.
-      state.slots = state.slots.map((v) => (v === 'W' ? 'W' : 'R'));
+      // Every block is work, stationary rest ('R') or rest that isn't stationary ('N'). Older
+      // saves had unmarked blocks, which count as rest.
+      state.slots = state.slots.map((v) => (v === 'W' || v === 'N' ? v : 'R'));
+      while (state.pages.length < PAGES) state.pages.push({ rego: '', twoUp: '' });
       if (!state.dateChosen) state.startDate = yesterdayISO();
       return state;
     } catch (e) {
@@ -81,9 +100,15 @@
 
   // ---- Dates and times ----------------------------------------------------------------------
 
+  // The date of page p. state.startDate is the first daily sheet's date (page 1).
   function pageDate(p) {
     const [y, m, d] = (state.startDate || yesterdayISO()).split('-').map(Number);
-    return new Date(y, m - 1, d + p);
+    return new Date(y, m - 1, d + p - FIRST);
+  }
+
+  // Which line of the graph a block is drawn on: work, or rest of either kind.
+  function lineRow(v) {
+    return v === 'W' ? 'W' : 'R';
   }
 
   function formatDate(date, long) {
@@ -187,7 +212,7 @@
   }
 
   function confirmButton(button, question, needsConfirm, action) {
-    const label = button.textContent;
+    let label = button.textContent;
     let timer = 0;
     const reset = () => {
       clearTimeout(timer);
@@ -201,6 +226,7 @@
         action();
         return;
       }
+      label = button.textContent;
       button.textContent = question;
       button.classList.add('confirming');
       timer = setTimeout(reset, 4000);
@@ -208,11 +234,14 @@
   }
 
   function buildSheet(p) {
-    const sheet = el('article', 'sheet');
-    sheet.setAttribute('aria-label', `Daily sheet ${p + 1}`);
+    const sheet = el('article', `sheet${p < FIRST ? ' sheet-before' : ''}`);
+    sheet.setAttribute('aria-label', p < FIRST ? 'The day before' : `Daily sheet ${p}`);
 
     const head = el('div', 'sheet-head');
-    head.append(el('div', 'sheet-title', 'DAILY SHEET'), el('div', 'sheet-no', `No. ${String(p + 1).padStart(4, '0')}`));
+    head.append(
+      el('div', 'sheet-title', p < FIRST ? 'THE DAY BEFORE' : 'DAILY SHEET'),
+      el('div', 'sheet-no', p < FIRST ? 'Optional' : `No. ${String(p).padStart(4, '0')}`)
+    );
     sheet.append(head);
 
     // Details panel, laid out like the boxes at the top of a diary page.
@@ -241,7 +270,7 @@
       save();
     });
     const dateBox = box('Day / date', date);
-    if (p === 1) {
+    if (p === MIDDLE) {
       // The middle sheet's date is changeable here; the other sheets follow it.
       const edit = el('span', 'date-edit');
       const input = el('input', 'middle-date-input meta-date');
@@ -374,6 +403,39 @@
     update(false);
   }
 
+  // ---- The day before -----------------------------------------------------------------------
+
+  // Only needed when work ran overnight into the first sheet: with its times, every rule is
+  // checked across that midnight. Removing it clears its entries, so nothing hidden is counted.
+  function buildDayBeforeToggle() {
+    const bar = el('div', 'day-before-bar');
+    const button = el('button', 'day-before-toggle');
+    button.type = 'button';
+    button.id = 'day-before-toggle';
+    const note = el('span', 'day-before-note');
+    bar.append(button, note);
+    $('#sheets').prepend(bar);
+    const label = () => {
+      button.textContent = state.showDayBefore ? 'Remove the day before' : 'Show the day before';
+      note.textContent = state.showDayBefore
+        ? 'Its work is not added to the work-before totals: those already include this day.'
+        : 'Only needed if you worked late on the day before the first sheet. Without it, that day counts as rest.';
+    };
+    confirmButton(button, 'Tap again to remove it', () => state.showDayBefore && state.slots
+      .some((v, i) => i < FIRST * SLOTS_PER_DAY && v !== 'R'), () => {
+      if (state.showDayBefore) {
+        for (let i = 0; i < FIRST * SLOTS_PER_DAY; i++) {
+          state.slots[i] = 'R';
+          delete state.changes[i];
+        }
+      }
+      state.showDayBefore = !state.showDayBefore;
+      label();
+      update(true);
+    });
+    label();
+  }
+
   // ---- Example ------------------------------------------------------------------------------
 
   function loadExample() {
@@ -386,7 +448,7 @@
       [[0, 3, 'R'], [3, 8, 'W'], [8, 8.5, 'R'], [8.5, 13, 'W'], [13, 13.25, 'R'], [13.25, 17.75, 'W'], [17.75, 23, 'R'], [23, 24, 'W']],
       [[0, 4, 'W'], [4, 4.5, 'R'], [4.5, 9, 'W'], [9, 18, 'R'], [18, 21, 'W'], [21, 24, 'R']],
     ];
-    days.forEach((entries, d) => entries.forEach(([from, to, v]) => set(d, from, to, v)));
+    days.forEach((entries, d) => entries.forEach(([from, to, v]) => set(d + FIRST, from, to, v)));
     state.slots = slots;
     state.changes = {};
     state.prior = {};
@@ -415,7 +477,7 @@
   }
 
   function render(full) {
-    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots() });
+    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), ...PRIOR });
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
@@ -434,11 +496,13 @@
         else rest++;
         for (const row of ['W', 'R']) {
           const c = s.cells[row][q];
-          const on = v === row;
+          const on = lineRow(v) === row;
           c.classList.toggle('on', on);
           // Vertical pen strokes where the line moves between WORK and REST.
-          c.classList.toggle('drop', on && prev != null && prev !== v);
-          c.classList.toggle('end', on && next != null && next !== v);
+          c.classList.toggle('drop', on && prev != null && lineRow(prev) !== row);
+          c.classList.toggle('end', on && next != null && lineRow(next) !== row);
+          // Rest that isn't stationary is drawn as a dashed line.
+          c.classList.toggle('ns', on && v === 'N');
           c.classList.toggle('breach', on && row === 'W' && breachSlots.has(i));
           c.classList.toggle('longnight', on && row === 'W' && result.longNight.has(i));
           c.title = `${fmtTime(i)}–${clock(i + 1)}`;
@@ -455,8 +519,9 @@
       s.sheet.classList.toggle('has-breach', pageBreaches.length > 0);
 
       if (!full) return;
+      s.sheet.hidden = p < FIRST && !state.showDayBefore;
       s.date.textContent = formatDate(pageDate(p), true);
-      if (p === 1) syncMiddleDate();
+      if (p === MIDDLE) syncMiddleDate();
       s.driver.textContent = state.driver || '—';
       s.licence.textContent = state.licence || '—';
       s.options.replaceChildren(...OPTIONS.map(([id, label]) => {
@@ -498,9 +563,9 @@
   // Where "Your next limits" starts: the day and time the driver picked, or the time now.
   function planStart() {
     if (state.planFrom) {
-      const day = [...Array(PAGES).keys()].findIndex((p) => isoDate(pageDate(p)) === state.planFrom.date);
+      const day = SHEETS.find((p) => isoDate(pageDate(p)) === state.planFrom.date);
       const [hh, mm] = String(state.planFrom.time).split(':').map(Number);
-      if (day >= 0 && Number.isInteger(hh) && Number.isInteger(mm)) {
+      if (day != null && Number.isInteger(hh) && Number.isInteger(mm)) {
         return { from: day * SLOTS_PER_DAY + Math.floor((hh * 60 + mm) / SLOT_MINUTES), custom: true };
       }
     }
@@ -525,8 +590,8 @@
 
     const step = (delta) => {
       const { from } = planStart();
-      const start = from >= 0 ? from : SLOTS_PER_DAY;
-      const i = Math.min(N - 1, Math.max(0, start + delta));
+      const start = from >= 0 ? from : MIDDLE * SLOTS_PER_DAY;
+      const i = Math.min(N - 1, Math.max(FIRST * SLOTS_PER_DAY, start + delta));
       state.planFrom = { date: isoDate(pageDate(Math.floor(i / SLOTS_PER_DAY))), time: clock(i) };
       update(true);
     };
@@ -544,13 +609,13 @@
     const day = $('#plan-day');
     const time = $('#plan-time');
     const todayIso = isoDate(new Date());
-    day.replaceChildren(...[...Array(PAGES).keys()].map((p) => {
+    day.replaceChildren(...SHEETS.map((p) => {
       const iso = isoDate(pageDate(p));
       const opt = el('option', null, `${formatDate(pageDate(p))}${iso === todayIso ? ' (today)' : ''}`);
       opt.value = iso;
       return opt;
     }));
-    const page = from >= 0 ? Math.floor(from / SLOTS_PER_DAY) : 1;
+    const page = from >= FIRST * SLOTS_PER_DAY ? Math.floor(from / SLOTS_PER_DAY) : MIDDLE;
     day.value = isoDate(pageDate(page));
     if (from >= 0 && document.activeElement !== time) time.value = clock(from);
     const now = $('#plan-now');
@@ -615,7 +680,7 @@
 
     let slots = state.slots;
     let base = from;
-    const opts = { prior: priorSlots() };
+    const opts = { prior: priorSlots(), ...PRIOR };
     let items = plan(slots, state.ruleset, from, opts);
     const rows = [];
 
@@ -673,7 +738,7 @@
     applySelection();
     if (b && reveal) {
       // A breach entirely before the sheets has no blocks of its own; show the first sheet.
-      const i = b.slots.length ? b.slots[0] : 0;
+      const i = b.slots.length ? b.slots[0] : FIRST * SLOTS_PER_DAY;
       const cell = sheets[Math.floor(i / SLOTS_PER_DAY)].cells.X[i % SLOTS_PER_DAY];
       cell.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
@@ -826,8 +891,10 @@
       ul.append(...result.breaches.map(breachItem));
       parts.push(ul);
     }
-    const total = state.slots.filter((v) => v === 'W').length;
+    const total = state.slots.filter((v, i) => v === 'W' && i >= FIRST * SLOTS_PER_DAY).length;
     const facts = [`Total work across the three sheets: ${formatDuration(total)}.`];
+    const before = state.slots.filter((v, i) => v === 'W' && i < FIRST * SLOTS_PER_DAY).length;
+    if (before) facts.push(`Work on the day before: ${formatDuration(before)}.`);
     if (result.longNight.size) facts.push(`Long/night work: ${formatDuration(result.longNight.size)}.`);
     const prior = priorSlots();
     for (const rule of RULESETS[state.ruleset].rules) {
@@ -907,7 +974,7 @@
         const label = el('label', 'earlier-label', `${longNight ? 'Long/night work' : 'Work'} in the ${days} days before`);
         label.htmlFor = id;
         const dates = el('span', 'earlier-dates',
-          `${formatDate(pageDate(-days))} to ${formatDate(pageDate(-1))} · for the ${days + 2}-day limit, ending with the middle sheet (${d.work.toLowerCase()})`);
+          `${formatDate(pageDate(FIRST - days))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days + 2}-day limit, ending with the middle sheet (${d.work.toLowerCase()})`);
         const row = el('span', 'earlier-input');
         const input = el('input');
         input.id = id;
@@ -976,6 +1043,7 @@
   buildPlanControls();
   buildDetail();
   for (let p = 0; p < PAGES; p++) buildSheet(p);
+  buildDayBeforeToggle();
   if (saved) update(true);
   else loadExample();
 

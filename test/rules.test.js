@@ -236,6 +236,16 @@ const tests = {
     assert.equal(r.breaches[0].amount, H(1));
   },
 
+  'earlier work: a day before the sheets is not added to the total again'() {
+    // Day 0 is the day before the sheets: its work is already in the 5-day total.
+    const slots = record([[6, 16, 'W'], [24 + 6, 24 + 16, 'W'], [48 + 6, 48 + 16, 'W']]);
+    const opts = { prior: { 'work-7': H(52) }, priorStart: SLOTS_PER_DAY };
+    // 52 before + 20 on the two sheets = 72: at the limit. Counting day 0 again would be 82.
+    assert.deepEqual(ids(check(slots, 'standard-solo', opts)).filter((id) => id === 'std-7d'), []);
+    const over = { prior: { 'work-7': H(52.25) }, priorStart: SLOTS_PER_DAY };
+    assert.equal(check(slots, 'standard-solo', over).breaches.find((b) => b.ruleId === 'std-7d').amount, 1);
+  },
+
   'earlier work: a total already over the limit is a breach with no marked blocks'() {
     const r = check(record([]), 'standard-solo', { prior: { 'work-14': H(150) } });
     assert.deepEqual(ids(r), ['std-14d']);
