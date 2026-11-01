@@ -83,6 +83,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .earlier-field.invalid input { border-color: var(--red); outline: 1px solid var(--red); }
 .earlier-error { font-size: 0.8rem; color: var(--red); }
 
+.rest-before { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--paper-edge); }
+.rest-before h3 { margin: 0; font-size: 0.95rem; }
+.earlier-input select {
+  padding: 6px 8px; min-height: 38px; border: 1px solid #b8c4c2; border-radius: 6px; background: #fff;
+  font-variant-numeric: tabular-nums; max-width: 100%;
+}
+.earlier-check { display: inline-flex; align-items: center; gap: 4px; font-size: 0.88rem; }
+.earlier-input .earlier-check input { width: 18px; height: 18px; min-height: 0; padding: 0; margin: 0; }
+.earlier-input { flex-wrap: wrap; }
+
 /* ---- Summary ---- */
 
 .summary { margin: 16px 0; padding: 14px 16px; border-radius: 8px; background: #fff; border: 1px solid var(--paper-edge); border-left-width: 6px; }

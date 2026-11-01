@@ -338,8 +338,13 @@
       }
     }
     const restRuns = findRestRuns(work);
+    // Stationary rest only: rest marked as not stationary ('N') doesn't count for it. Unmarked
+    // time counts as rest, as everywhere else.
+    const statRuns = findRestRuns(slots.map((v) => v === 'W' || v === 'N'));
+    const history = opts.history || {};
+    const historyUsed = new Set();
     const result = { ruleset, breaches: [], notes: [], longNight: new Set(), knownEnd };
-    if (!work.some(Boolean) && !Object.keys(prior).length) return result;
+    if (!work.some(Boolean) && !Object.keys(prior).length && !Object.keys(history).length) return result;
 
     if (ruleset.rules.some((r) => r.maxLongNight != null)) {
       const rule24 = ruleset.rules.find((r) => r.period === H(24) && r.maxWork != null);
@@ -353,11 +358,16 @@
 
       if (rule.betweenRests) {
         const { rest, maxWork } = rule.betweenRests;
-        const resetAt = new Set(restRuns.filter((r) => r.end - r.start >= rest).map((r) => r.start));
-        let cum = 0;
-        let segStart = 0;
+        const resetAt = new Set(statRuns.filter((r) => r.end - r.start >= rest).map((r) => r.start));
+        // Work since the last 24-hour rest before the sheets, if the driver gave it, covers
+        // everything up to the first sheet, so counting starts there.
+        const carried = history.workSinceLongRest;
+        const from = carried != null ? opts.priorStart || 0 : 0;
+        let cum = carried != null ? carried : 0;
+        let segStart = from;
         let current = null;
-        for (let i = 0; i < n; i++) {
+        if (carried != null) historyUsed.add(rule.id);
+        for (let i = from; i < n; i++) {
           if (resetAt.has(i)) {
             cum = 0;
             current = null;
@@ -375,7 +385,10 @@
           }
         }
         for (const f of findings) {
-          f.message = `Worked ${formatDuration(f.total)} from ${fmtTime(f.start)} without ${rule.restText} — the limit is ${formatDuration(maxWork)} (${formatDuration(f.amount)} over).`;
+          const since = carried != null && f.start === from && carried > 0
+            ? ` (including ${formatDuration(carried)} before the sheets since your last 24-hour rest)`
+            : '';
+          f.message = `Worked ${formatDuration(f.total)} from ${fmtTime(f.start)}${since} without ${rule.restText} — the limit is ${formatDuration(maxWork)} (${formatDuration(f.amount)} over).`;
           Object.assign(f, riskOf(rule, 'work', f.amount, f.total));
         }
       } else {
@@ -516,12 +529,102 @@
         }
       }
 
+      for (const f of historyFindings(rule)) {
+        result.breaches.push({ ...f, ruleId: rule.id, ruleLabel: label });
+      }
+
       const needsFullPeriod = rule.restBlocks || rule.restInBlocks || rule.nightRests;
-      if (rule.period && needsFullPeriod && rule.period > knownEnd) {
+      if (rule.period && needsFullPeriod && rule.period > knownEnd && !historyUsed.has(rule.id)) {
         result.notes.push(
-          `${label}: the rest requirement (${rule.restText}) needs at least ${formatPeriod(rule.period)} of records, so only the work limit is checked.`
+          `${label}: the rest requirement (${rule.restText}) needs ${formatPeriod(rule.period)} of records or your answers under "Rest before these sheets", so only the work limit is checked.`
         );
       }
+    }
+
+    // Rest requirements for the 7, 14 and 28-day periods, using the driver's answers about rest
+    // before the sheets. The period is the one ending with the last of the `priorThrough` days,
+    // the same as for the work-before totals.
+    function historyFindings(rule) {
+      const out = [];
+      if (!rule.period || rule.period < DAYS(7)) return out;
+      const days = rule.period / SLOTS_PER_DAY;
+      const priorStart = opts.priorStart || 0;
+      const end = Math.min(n, priorStart + (opts.priorThrough || 2) * SLOTS_PER_DAY);
+      const start = end - rule.period;
+      const daysBefore = (priorStart - start) / SLOTS_PER_DAY;
+      const range = `the ${formatPeriod(rule.period)} from ${fmtTime(start)}`;
+      const lastWork = workSlotsIn(work, priorStart, end).slice(-1);
+
+      // 7 days: another 24-hour rest within 7 days of the end of the last one.
+      const s0 = history.lastLongRestEnd;
+      if (s0 != null && rule.restBlocks && rule.restBlocks.count === 1 &&
+          rule.restBlocks.length >= H(24) && rule.period === DAYS(7)) {
+        historyUsed.add(rule.id);
+        const due = s0 + rule.period;
+        if (due <= knownEnd) {
+          const L = rule.restBlocks.length;
+          // Without a recorded day before, the time before the sheets is unknown, not rest.
+          const known = history.dayBeforeRecorded ? 0 : priorStart;
+          const lengths = restLengthsIn(statRuns, Math.max(s0, known), due);
+          if (!lengths.some((len) => len >= L)) {
+            const longest = lengths[0] || 0;
+            const flagged = workSlotsIn(work, due - L, due);
+            out.push({
+              kind: 'rest', start: s0, end: due, amount: L - longest, slots: flagged.length ? flagged : lastWork,
+              ...riskOf(rule, 'rest', L - longest, longest),
+              message: `Your last 24-hour rest ended ${fmtTime(s0)}, so the next was due by ${fmtTime(due)}. The longest rest since was ${formatDuration(longest)} — ${rule.restText} is required in each 7 days.`,
+            });
+          }
+        }
+      }
+
+      // Several 24-hour rests (BFM 14 days, bus 28 days): counted before and on the sheets.
+      const longKey = `long-${days}`;
+      const longBefore = (history.longRests || {})[longKey];
+      if (longBefore != null && rule.restBlocks && rule.restBlocks.count > 1) {
+        historyUsed.add(rule.id);
+        const L = rule.restBlocks.length;
+        const onSheets = restLengthsIn(statRuns, priorStart, end).filter((len) => len >= L).length;
+        const total = longBefore + onSheets;
+        if (total < rule.restBlocks.count) {
+          out.push({
+            kind: 'rest', start, end, amount: 0, slots: lastWork, severity: null,
+            message: `${total} rest break${total === 1 ? '' : 's'} of ${formatDuration(L)} in ${range} (${longBefore} in the ${daysBefore} days before the sheets, ${onSheets} on the sheets) — ${rule.restText} required.`,
+          });
+        }
+      }
+
+      // Night rest breaks: the driver's count for the days before, plus nights on the sheets.
+      const nightKey = `night-${days}`;
+      const before = (history.nights || {})[nightKey];
+      if (before && before.count != null && rule.nightRests) {
+        historyUsed.add(rule.id);
+        const nightOk = (k) => {
+          const a = k * SLOTS_PER_DAY + NIGHT_REST_FROM;
+          const b = k * SLOTS_PER_DAY + NIGHT_REST_TO;
+          return longestRestIn(statRuns, a, b) >= NIGHT_REST_LENGTH ||
+            statRuns.some((r) => r.end - r.start >= H(24) && r.start < b && r.end > a);
+        };
+        // Nights that start on the sheets and end by 8am on the period's last day.
+        const firstDay = priorStart / SLOTS_PER_DAY;
+        const ok = [];
+        for (let k = firstDay; k * SLOTS_PER_DAY + NIGHT_REST_TO <= end; k++) ok.push(nightOk(k));
+        const onSheets = ok.filter(Boolean).length;
+        const total = before.count + onSheets;
+        // The night into the first sheet is part of the days before; it pairs with the first
+        // night on the sheets. With the day before recorded, it is read from the sheet.
+        const nightBefore = history.dayBeforeRecorded ? nightOk(firstDay - 1) : history.nightBefore === true;
+        const consecutive = before.consecutive === true ||
+          (nightBefore && ok[0]) || ok.some((v, k) => v && ok[k + 1]);
+        const needConsecutive = rule.nightRests.consecutive;
+        if (total < rule.nightRests.count || (needConsecutive && !consecutive)) {
+          out.push({
+            kind: 'night', start, end, amount: 0, slots: lastWork, severity: null,
+            message: `${total} night rest break${total === 1 ? '' : 's'} in ${range} (${before.count} in the ${daysBefore} days before the sheets, ${onSheets} on the sheets)${needConsecutive && !consecutive ? ', and none on consecutive days' : ''} — ${rule.restText} required.`,
+          });
+        }
+      }
+      return out;
     }
 
     // A breach that happened entirely before the record has no marked slots; list it first.

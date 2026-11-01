@@ -269,6 +269,61 @@ const tests = {
     assert.equal(p[0].stopAt, H(32));
   },
 
+  // Rest before the sheets. Day 0 is the day before, days 1 to 3 the sheets; the periods end
+  // with the middle sheet (day 2).
+  'rest before: a 24-hour rest is due within 7 days of the last one'() {
+    const D = SLOTS_PER_DAY;
+    const base = { priorStart: D, priorThrough: 2 };
+    // Last 24-hour rest ended at 06:00, 5 days before the first sheet: the next is due by 06:00
+    // on the last sheet. Ten hours of work a day, no 24-hour rest.
+    const slots = record([[6, 16, 'W'], [30, 40, 'W'], [54, 64, 'W'], [78, 88, 'W']]);
+    const s0 = D - 5 * D + H(6);
+    const r = check(slots, 'standard-solo', { ...base, history: { lastLongRestEnd: s0 } });
+    const b = r.breaches.find((x) => x.ruleId === 'std-7d' && x.kind === 'rest');
+    assert.ok(b, 'flags the missing 24-hour rest');
+    assert.equal(b.end, s0 + 7 * D);
+    // A 24-hour rest on the first sheet meets it.
+    const rested = record([[6, 16, 'W'], [54, 64, 'W'], [78, 88, 'W']]);
+    const ok = check(rested, 'standard-solo', { ...base, history: { lastLongRestEnd: s0 } });
+    assert.equal(ok.breaches.find((x) => x.ruleId === 'std-7d' && x.kind === 'rest'), undefined);
+  },
+
+  'rest before: night rest breaks are counted before and on the sheets'() {
+    const base = { priorStart: SLOTS_PER_DAY, priorThrough: 2 };
+    // Rest from 22:00 on the first sheet to 08:00 on the middle sheet is a night rest break.
+    const slots = record([[30, 46, 'W'], [56, 64, 'W']]);
+    const run = (history) => check(slots, 'standard-solo', { ...base, history })
+      .breaches.filter((b) => b.ruleId === 'std-14d');
+    // 3 before + 1 on the sheets = 4, but none on consecutive days.
+    const lone = run({ nights: { 'night-14': { count: 3, consecutive: false } }, nightBefore: false });
+    assert.equal(lone.length, 1);
+    assert.match(lone[0].message, /none on consecutive days/);
+    // The night into the first sheet was a night rest break too: it pairs with the first one.
+    assert.deepEqual(run({ nights: { 'night-14': { count: 3, consecutive: false } }, nightBefore: true }), []);
+    // Only 2 before: 3 in all.
+    assert.equal(run({ nights: { 'night-14': { count: 2, consecutive: true } } }).length, 1);
+  },
+
+  'rest before: BFM work since the last 24-hour rest counts towards the 84 hours'() {
+    const base = { priorStart: SLOTS_PER_DAY, priorThrough: 2 };
+    const slots = record([[24 + 6, 24 + 10, 'W']]);
+    const run = (since) => check(slots, 'bfm-solo', { ...base, history: { workSinceLongRest: since } })
+      .breaches.filter((b) => b.ruleId === 'bfm-84h');
+    assert.deepEqual(run(H(80)), []);
+    const over = run(H(80.25));
+    assert.equal(over.length, 1);
+    assert.equal(over[0].amount, 1);
+  },
+
+  'rest before: BFM needs two 24-hour rests in 14 days'() {
+    const base = { priorStart: SLOTS_PER_DAY, priorThrough: 2 };
+    const slots = record([[30, 40, 'W'], [54, 64, 'W']]);
+    const run = (count) => check(slots, 'bfm-solo', { ...base, history: { longRests: { 'long-14': count } } })
+      .breaches.filter((b) => b.ruleId === 'bfm-14d' && b.kind === 'rest');
+    assert.equal(run(1).length, 1);
+    assert.deepEqual(run(2), []);
+  },
+
   'BFM counts night work towards the long/night limit'() {
     // Three nights of 00:00–06:00 work, each followed by a 5-hour day: 18 h of night work.
     const entries = [];

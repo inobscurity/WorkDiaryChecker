@@ -55,6 +55,8 @@
       planFrom: null,
       // Earlier work typed in for the longer periods, as entered, keyed by rule (e.g. work-7).
       prior: {},
+      // Answers about rest before the sheets, as entered.
+      history: { lastRestDay: '', lastRestTime: '', workSince: '', nights: {}, nightBefore: '', longRests: {} },
       showDayBefore: false,
     };
   }
@@ -72,6 +74,7 @@
       }
       if (saved.slots.length !== N) return null;
       const state = { ...defaultState(), ...saved };
+      state.history = { ...defaultState().history, ...(saved.history || {}) };
       // Every block is work, stationary rest ('R') or rest that isn't stationary ('N'). Older
       // saves had unmarked blocks, which count as rest.
       state.slots = state.slots.map((v) => (v === 'W' || v === 'N' ? v : 'R'));
@@ -174,6 +177,7 @@
       state.slots = new Array(N).fill('R');
       state.changes = {};
       state.prior = {};
+      state.history = defaultState().history;
       state.example = false;
       clearEarlierBoxes();
       update(true);
@@ -452,6 +456,7 @@
     state.slots = slots;
     state.changes = {};
     state.prior = {};
+    state.history = defaultState().history;
     state.example = true;
     clearEarlierBoxes();
     update(true);
@@ -477,7 +482,7 @@
   }
 
   function render(full) {
-    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), ...PRIOR });
+    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), history: historyOpts(), ...PRIOR });
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
@@ -536,6 +541,7 @@
 
     if (full) {
       renderEarlier();
+      renderRestBefore();
       renderSummary();
       renderLimits(ruleset);
       renderPlanner();
@@ -680,7 +686,7 @@
 
     let slots = state.slots;
     let base = from;
-    const opts = { prior: priorSlots(), ...PRIOR };
+    const opts = { prior: priorSlots(), history: historyOpts(), ...PRIOR };
     let items = plan(slots, state.ruleset, from, opts);
     const rows = [];
 
@@ -947,11 +953,185 @@
 
   let earlierBuiltFor = '';
 
-  // The boxes are only rebuilt when the work option or dates change, so empty them directly.
+  // The boxes are only rebuilt when the work option or dates change, so reset them directly.
   function clearEarlierBoxes() {
-    document.querySelectorAll('#earlier-fields input').forEach((input) => {
+    document.querySelectorAll('#earlier-fields input, #rest-fields input').forEach((input) => {
       input.value = '';
     });
+    document.querySelectorAll('#rest-fields select').forEach((select) => {
+      select.value = '';
+    });
+    document.querySelectorAll('#rest-fields input[type=checkbox]').forEach((box) => {
+      box.checked = false;
+    });
+  }
+
+  // ---- Rest before the sheets ---------------------------------------------------------------
+
+  // Which questions the current work option needs.
+  function restQuestions() {
+    const rules = RULESETS[state.ruleset].rules;
+    const days = (rule) => rule.period / SLOTS_PER_DAY;
+    return {
+      lastRest: rules.some((r) => (r.restBlocks && r.restBlocks.count === 1 && r.restBlocks.length >= H(24) &&
+        r.period === 7 * SLOTS_PER_DAY) || r.betweenRests),
+      workSince: rules.some((r) => r.betweenRests),
+      nights: rules.filter((r) => r.nightRests && r.period >= 7 * SLOTS_PER_DAY),
+      longRests: rules.filter((r) => r.restBlocks && r.restBlocks.count > 1 && r.restBlocks.length >= H(24)),
+      days,
+    };
+  }
+
+  // The answers in the form the rules engine takes. Blank answers are left out.
+  function historyOpts() {
+    const h = state.history;
+    const q = restQuestions();
+    const out = {};
+    if (q.lastRest && h.lastRestDay && h.lastRestTime) {
+      const day = Math.round((new Date(`${h.lastRestDay}T00:00`) - pageDate(0)) / 86400000);
+      const [hh, mm] = h.lastRestTime.split(':').map(Number);
+      out.lastLongRestEnd = day * SLOTS_PER_DAY + Math.floor((hh * 60 + mm) / SLOT_MINUTES);
+    }
+    if (q.workSince && out.lastLongRestEnd != null) {
+      const since = parseHours(h.workSince, 28 * 24);
+      if (since != null && !Number.isNaN(since)) out.workSinceLongRest = since;
+    }
+    const nights = {};
+    for (const rule of q.nights) {
+      const key = `night-${q.days(rule)}`;
+      const a = h.nights[key];
+      if (a && a.count !== '' && a.count != null) nights[key] = { count: Number(a.count), consecutive: !!a.consecutive };
+    }
+    if (Object.keys(nights).length) out.nights = nights;
+    if (h.nightBefore) out.nightBefore = h.nightBefore === 'yes';
+    out.dayBeforeRecorded = state.showDayBefore;
+    const longRests = {};
+    for (const rule of q.longRests) {
+      const key = `long-${q.days(rule)}`;
+      if (h.longRests[key] !== '' && h.longRests[key] != null) longRests[key] = Number(h.longRests[key]);
+    }
+    if (Object.keys(longRests).length) out.longRests = longRests;
+    return out;
+  }
+
+  function setHistory(change) {
+    state.history = { ...state.history, ...change };
+    update(true);
+  }
+
+  function selectOf(id, label, options, value, onChange) {
+    const select = el('select');
+    select.id = id;
+    select.setAttribute('aria-label', label);
+    select.append(...options.map(([v, text]) => {
+      const opt = el('option', null, text);
+      opt.value = v;
+      return opt;
+    }));
+    select.value = value || '';
+    select.addEventListener('change', () => onChange(select.value));
+    return select;
+  }
+
+  let restBuiltFor = '';
+
+  function renderRestBefore() {
+    const q = restQuestions();
+    const wrap = $('#rest-before');
+    const fields = $('#rest-fields');
+    const any = q.lastRest || q.nights.length || q.longRests.length;
+    wrap.hidden = !any;
+    const signature = `${state.ruleset}|${state.startDate}|${state.showDayBefore}`;
+    if (signature === restBuiltFor) {
+      syncRestFields();
+      return;
+    }
+    restBuiltFor = signature;
+    const h = state.history;
+    const out = [];
+    const field = (labelText, help, ...controls) => {
+      const f = el('div', 'earlier-field');
+      f.append(el('span', 'earlier-label', labelText));
+      if (help) f.append(el('span', 'earlier-dates', help));
+      const row = el('span', 'earlier-input');
+      row.append(...controls);
+      f.append(row);
+      return f;
+    };
+
+    if (q.lastRest) {
+      // Any day from 4 weeks before the first sheet up to the middle sheet.
+      const days = [['', 'Not entered']];
+      for (let p = FIRST - 27; p <= MIDDLE; p++) days.push([isoDate(pageDate(p)), formatDate(pageDate(p))]);
+      const times = [['', '—']];
+      for (let k = 0; k < SLOTS_PER_DAY; k++) times.push([clock(k), clock(k)]);
+      out.push(field('When your last 24-hour rest ended', 'The end of your most recent 24 continuous hours of stationary rest before the sheets.',
+        selectOf('rest-last-day', 'Day your last 24-hour rest ended', days, h.lastRestDay, (v) => setHistory({ lastRestDay: v, lastRestTime: h.lastRestTime || (v ? '06:00' : '') })),
+        selectOf('rest-last-time', 'Time your last 24-hour rest ended', times, h.lastRestTime, (v) => setHistory({ lastRestTime: v }))));
+    }
+    if (q.workSince) {
+      const input = el('input');
+      input.id = 'rest-work-since';
+      input.inputMode = 'decimal';
+      input.autocomplete = 'off';
+      input.placeholder = 'e.g. 40';
+      input.value = h.workSince || '';
+      input.addEventListener('input', () => setHistory({ workSince: input.value }));
+      out.push(field('Work since then, before the first sheet', 'For the 84 hours between 24-hour rests. Needs the date above.', input, el('span', null, 'hours')));
+    }
+    for (const rule of q.longRests) {
+      const days = q.days(rule);
+      const key = `long-${days}`;
+      const before = days - (MIDDLE - FIRST + 1);
+      const counts = [['', 'Not entered']];
+      for (let c = 0; c <= rule.restBlocks.count; c++) counts.push([String(c), String(c)]);
+      out.push(field(`24-hour rests in the ${before} days before`, `${formatDate(pageDate(FIRST - before))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
+        selectOf(`rest-${key}`, `24-hour rests in the ${before} days before`, counts, h.longRests[key] == null ? '' : String(h.longRests[key]),
+          (v) => setHistory({ longRests: { ...state.history.longRests, [key]: v } }))));
+    }
+    for (const rule of q.nights) {
+      const days = q.days(rule);
+      const key = `night-${days}`;
+      const before = days - (MIDDLE - FIRST + 1);
+      const a = h.nights[key] || {};
+      const counts = [['', 'Not entered']];
+      for (let c = 0; c <= before; c++) counts.push([String(c), String(c)]);
+      const controls = [selectOf(`rest-${key}`, `Night rest breaks in the ${before} days before`, counts, a.count == null ? '' : String(a.count),
+        (v) => setHistory({ nights: { ...state.history.nights, [key]: { ...state.history.nights[key], count: v } } }))];
+      if (rule.nightRests.consecutive) {
+        const label = el('label', 'earlier-check');
+        const box = el('input');
+        box.type = 'checkbox';
+        box.id = `rest-${key}-consecutive`;
+        box.checked = !!a.consecutive;
+        box.addEventListener('change', () => setHistory({ nights: { ...state.history.nights, [key]: { ...state.history.nights[key], consecutive: box.checked } } }));
+        label.append(box, document.createTextNode(' 2 of them on consecutive nights'));
+        controls.push(label);
+      }
+      out.push(field(`Night rest breaks in the ${before} days before`,
+        `${formatDate(pageDate(FIRST - before))} to ${formatDate(pageDate(FIRST - 1))}, counting the night into the first sheet · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
+        ...controls));
+    }
+    if (q.nights.some((r) => r.nightRests.consecutive) && !state.showDayBefore) {
+      out.push(field('Was the night into the first sheet a night rest break?', 'At least 7 hours stationary rest between 10pm and 8am. It can pair with a night rest break on the sheets.',
+        selectOf('rest-night-before', 'Night into the first sheet', [['', 'Not entered'], ['yes', 'Yes'], ['no', 'No']], h.nightBefore,
+          (v) => setHistory({ nightBefore: v }))));
+    }
+    fields.replaceChildren(...out);
+  }
+
+  // Shows the stored answers in the dropdowns, except one the driver is using right now.
+  function syncRestFields() {
+    const h = state.history;
+    const set = (id, value) => {
+      const node = document.getElementById(id);
+      if (node && document.activeElement !== node) node.value = value == null ? '' : String(value);
+    };
+    set('rest-last-day', h.lastRestDay);
+    set('rest-last-time', h.lastRestTime);
+    for (const [key, a] of Object.entries(h.nights || {})) set(`rest-${key}`, a && a.count);
+    for (const [key, v] of Object.entries(h.longRests || {})) set(`rest-${key}`, v);
+    set('rest-night-before', h.nightBefore);
   }
 
   // Rebuilt only when the work option or dates change, so typing in a box keeps its focus.
