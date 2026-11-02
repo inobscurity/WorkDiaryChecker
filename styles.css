@@ -83,6 +83,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .earlier-field.invalid input { border-color: var(--red); outline: 1px solid var(--red); }
 .earlier-error { font-size: 0.8rem; color: var(--red); }
 
+.prior-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 4px; }
+.prior-sheets { display: inline-flex; border: 1px solid var(--diary); border-radius: 6px; overflow: hidden; }
+.prior-choice {
+  padding: 6px 14px; min-height: 38px; border: 0; border-left: 1px solid var(--diary); background: #fff;
+  color: var(--diary); font-weight: 600; cursor: pointer;
+}
+.prior-choice:first-child { border-left: 0; }
+.prior-choice.active { background: var(--diary); color: #fff; }
+#prior-sheets-help { display: block; margin: 0 0 10px; }
+
 .rest-before { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--paper-edge); }
 .rest-before h3 { margin: 0; font-size: 0.95rem; }
 .earlier-input select {

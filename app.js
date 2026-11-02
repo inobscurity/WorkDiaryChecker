@@ -11,8 +11,20 @@
   const SHEETS = [1, 2, 3];
   const MIDDLE = 2;
   const N = PAGES * SLOTS_PER_DAY;
-  // The earlier-work totals cover the days before the first sheet and end with the middle sheet.
-  const PRIOR = { priorStart: FIRST * SLOTS_PER_DAY, priorThrough: MIDDLE - FIRST + 1 };
+  // The earlier-work totals cover the days before the first sheet. With the first 1, 2 or 3
+  // sheets (the driver's choice, 2 by default) they make up the 7, 14 or 28 days.
+  function priorSheets() {
+    return [1, 2, 3].includes(state.priorSheets) ? state.priorSheets : 2;
+  }
+
+  function priorOpts() {
+    return { priorStart: FIRST * SLOTS_PER_DAY, priorThrough: priorSheets() };
+  }
+
+  // "the first sheet", "the middle sheet", "the last sheet": where the periods end.
+  function priorEndName() {
+    return ['the first sheet', 'the middle sheet', 'the last sheet'][priorSheets() - 1];
+  }
   const STORAGE_KEY = 'ewd-checker-v1';
   const HOUR_LABELS = ['Mid', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
     'Noon', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
@@ -58,6 +70,8 @@
       // Answers about rest before the sheets, as entered.
       history: { lastRestDay: '', lastRestTime: '', workSince: '', nights: {}, nightBefore: '', longRests: {} },
       showDayBefore: false,
+      // How many sheets go with the work-before totals to make up 7, 14 and 28 days.
+      priorSheets: 2,
     };
   }
 
@@ -499,7 +513,7 @@
   }
 
   function render(full) {
-    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), history: historyOpts(), ...PRIOR });
+    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), history: historyOpts(), ...priorOpts() });
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
@@ -707,7 +721,7 @@
 
     let slots = state.slots;
     let base = from;
-    const opts = { prior: priorSlots(), history: historyOpts(), ...PRIOR };
+    const opts = { prior: priorSlots(), history: historyOpts(), ...priorOpts() };
     let items = plan(slots, state.ruleset, from, opts);
     const rows = [];
 
@@ -928,7 +942,7 @@
       const key = priorKey(rule);
       if (key && prior[key] != null) {
         const days = rule.period / SLOTS_PER_DAY;
-        facts.push(`${rule.maxLongNight != null ? 'Long/night work' : 'Work'} in the ${days - 2} days before: ${formatDuration(prior[key])}, checked with the first two sheets against the ${days}-day limit.`);
+        facts.push(`${rule.maxLongNight != null ? 'Long/night work' : 'Work'} in the ${days - priorSheets()} days before: ${formatDuration(prior[key])}, checked with ${sheetsText()} against the ${days}-day limit.`);
       }
     }
     parts.push(el('p', 'facts', facts.join(' ')));
@@ -965,7 +979,7 @@
     const out = {};
     for (const rule of priorRules()) {
       const key = priorKey(rule);
-      const days = rule.period / SLOTS_PER_DAY - 2;
+      const days = rule.period / SLOTS_PER_DAY - priorSheets();
       const slots = parseHours(state.prior[key], days * 24);
       if (slots != null && !Number.isNaN(slots)) out[key] = slots;
     }
@@ -1062,7 +1076,7 @@
     const fields = $('#rest-fields');
     const any = q.lastRest || q.nights.length || q.longRests.length;
     wrap.hidden = !any;
-    const signature = `${state.ruleset}|${state.startDate}|${state.showDayBefore}`;
+    const signature = `${state.ruleset}|${state.startDate}|${state.showDayBefore}|${priorSheets()}`;
     if (signature === restBuiltFor) {
       syncRestFields();
       return;
@@ -1103,7 +1117,7 @@
     for (const rule of q.longRests) {
       const days = q.days(rule);
       const key = `long-${days}`;
-      const before = days - (MIDDLE - FIRST + 1);
+      const before = days - priorSheets();
       const counts = [['', 'Not entered']];
       for (let c = 0; c <= rule.restBlocks.count; c++) counts.push([String(c), String(c)]);
       out.push(field(`24-hour rests in the ${before} days before`, `${formatDate(pageDate(FIRST - before))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
@@ -1113,7 +1127,7 @@
     for (const rule of q.nights) {
       const days = q.days(rule);
       const key = `night-${days}`;
-      const before = days - (MIDDLE - FIRST + 1);
+      const before = days - priorSheets();
       const a = h.nights[key] || {};
       const counts = [['', 'Not entered']];
       for (let c = 0; c <= before; c++) counts.push([String(c), String(c)]);
@@ -1155,18 +1169,50 @@
     set('rest-night-before', h.nightBefore);
   }
 
+  // "the first sheet" / "the first two sheets" / "all three sheets".
+  function sheetsText() {
+    return ['the first sheet', 'the first two sheets', 'all three sheets'][priorSheets() - 1];
+  }
+
+  // How many sheets go with the totals: 1, 2 or 3. The days before change to suit.
+  function buildPriorChoice() {
+    const group = $('#prior-sheets');
+    group.replaceChildren(...[1, 2, 3].map((k) => {
+      const b = el('button', 'prior-choice');
+      b.type = 'button';
+      b.dataset.sheets = String(k);
+      b.textContent = ['1 sheet', '2 sheets', '3 sheets'][k - 1];
+      b.addEventListener('click', () => {
+        state.priorSheets = k;
+        update(true);
+      });
+      return b;
+    }));
+  }
+
+  function syncPriorChoice() {
+    document.querySelectorAll('.prior-choice').forEach((b) => {
+      const on = Number(b.dataset.sheets) === priorSheets();
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    const k = priorSheets();
+    $('#prior-sheets-help').textContent = `The dates below plus ${sheetsText()} make up each period, ending with ${priorEndName()} (${formatDate(pageDate(FIRST + k - 1))}).`;
+  }
+
   // Rebuilt only when the work option or dates change, so typing in a box keeps its focus.
   function renderEarlier() {
     const section = $('#earlier');
     const fields = $('#earlier-fields');
     const rules = priorRules();
     section.hidden = !rules.length;
-    const signature = `${state.ruleset}|${state.startDate}`;
+    syncPriorChoice();
+    const signature = `${state.ruleset}|${state.startDate}|${priorSheets()}`;
     if (signature !== earlierBuiltFor) {
       earlierBuiltFor = signature;
       fields.replaceChildren(...rules.map((rule) => {
         const key = priorKey(rule);
-        const days = rule.period / SLOTS_PER_DAY - 2;
+        const days = rule.period / SLOTS_PER_DAY - priorSheets();
         const longNight = rule.maxLongNight != null;
         const d = describeRule(rule);
         const field = el('div', 'earlier-field');
@@ -1175,7 +1221,7 @@
         const label = el('label', 'earlier-label', `${longNight ? 'Long/night work' : 'Work'} in the ${days} days before`);
         label.htmlFor = id;
         const dates = el('span', 'earlier-dates',
-          `${formatDate(pageDate(FIRST - days))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days + 2}-day limit, ending with the middle sheet (${d.work.toLowerCase()})`);
+          `${formatDate(pageDate(FIRST - days))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days + priorSheets()}-day limit, ending with ${priorEndName()} (${d.work.toLowerCase()})`);
         const row = el('span', 'earlier-input');
         const input = el('input');
         input.id = id;
@@ -1207,7 +1253,7 @@
     for (const field of fields.children) {
       const key = field.dataset.key;
       const rule = rules.find((r) => priorKey(r) === key);
-      const days = rule.period / SLOTS_PER_DAY - 2;
+      const days = rule.period / SLOTS_PER_DAY - priorSheets();
       const bad = Number.isNaN(parseHours(state.prior[key], days * 24));
       field.classList.toggle('invalid', bad);
       field.querySelector('.earlier-error').hidden = !bad;
@@ -1216,7 +1262,7 @@
         .find((k) => totals[key] != null && totals[k] > totals[key]);
       warning.hidden = !shorter;
       if (shorter) {
-        const shorterDays = Number(shorter.split('-')[1]) - 2;
+        const shorterDays = Number(shorter.split("-")[1]) - priorSheets();
         warning.textContent = `These ${days} days include the ${shorterDays} days above (${formatDuration(totals[shorter])}), so this total should be at least that.`;
       }
     }
@@ -1241,6 +1287,7 @@
   }
 
   buildControls();
+  buildPriorChoice();
   buildPlanControls();
   buildDetail();
   for (let p = 0; p < PAGES; p++) buildSheet(p);

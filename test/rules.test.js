@@ -246,6 +246,19 @@ const tests = {
     assert.equal(check(slots, 'standard-solo', over).breaches.find((b) => b.ruleId === 'std-7d').amount, 1);
   },
 
+  'earlier work: 1, 2 or 3 sheets go with the total'() {
+    // Day 0 is the day before; sheets are days 1 to 3, with 10 hours on each.
+    const slots = record([[30, 40, 'W'], [54, 64, 'W'], [78, 88, 'W'], [88, 96, 'R']]);
+    const run = (k, before) => check(slots, 'standard-solo', { prior: { 'work-7': H(before) }, priorStart: SLOTS_PER_DAY, priorThrough: k })
+      .breaches.filter((b) => b.ruleId === 'std-7d');
+    // 1 sheet: 6 days before + 10 h. 2 sheets: 5 days + 20 h. 3 sheets: 4 days + 30 h.
+    assert.deepEqual(run(1, 62), []);
+    assert.equal(run(1, 62.25)[0].amount, 1);
+    assert.deepEqual(run(2, 52), []);
+    assert.equal(run(3, 42.25)[0].amount, 1);
+    assert.equal(run(3, 42.25)[0].end, 4 * SLOTS_PER_DAY);
+  },
+
   'earlier work: a total already over the limit is a breach with no marked blocks'() {
     const r = check(record([]), 'standard-solo', { prior: { 'work-14': H(150) } });
     assert.deepEqual(ids(r), ['std-14d']);
