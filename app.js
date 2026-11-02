@@ -75,9 +75,8 @@
       if (saved.slots.length !== N) return null;
       const state = { ...defaultState(), ...saved };
       state.history = { ...defaultState().history, ...(saved.history || {}) };
-      // Every block is work, stationary rest ('R') or rest that isn't stationary ('N'). Older
-      // saves had unmarked blocks, which count as rest.
-      state.slots = state.slots.map((v) => (v === 'W' || v === 'N' ? v : 'R'));
+      // Every block is work or rest. Older saves had unmarked blocks, which count as rest.
+      state.slots = state.slots.map((v) => (v === 'W' ? 'W' : 'R'));
       while (state.pages.length < PAGES) state.pages.push({ rego: '', twoUp: '' });
       if (!state.dateChosen) state.startDate = yesterdayISO();
       return state;
@@ -111,7 +110,7 @@
 
   // The lines of the graph, top to bottom: work, stationary rest, rest that isn't stationary.
   // A block's value is the line it is drawn on.
-  const LINES = ['W', 'R', 'N'];
+  const LINES = ['W', 'R'];
 
   function formatDate(date, long) {
     return date.toLocaleDateString('en-AU', long
@@ -324,9 +323,9 @@
     });
     grid.append(el('div', 'total-head', 'Total hours'));
 
-    const cells = { W: [], R: [], N: [], X: [] };
+    const cells = { W: [], R: [], X: [] };
     const totals = {};
-    for (const [row, label] of [['W', 'WORK'], ['R', 'REST'], ['N', 'REST NOT STATIONARY'], ['X', 'BREACH']]) {
+    for (const [row, label] of [['W', 'WORK'], ['R', 'REST'], ['X', 'BREACH']]) {
       grid.append(el('div', `row-label row-${row}`, label));
       for (let q = 0; q < SLOTS_PER_DAY; q++) {
         const cell = el('div', `cell row-${row}${q % 4 === 0 ? ' hour-start' : ''}${q % 4 === 2 ? ' half' : ''}`);
@@ -510,13 +509,11 @@
       const base = p * SLOTS_PER_DAY;
       let work = 0;
       let rest = 0;
-      let moving = 0;
       for (let q = 0; q < SLOTS_PER_DAY; q++) {
         const i = base + q;
         const v = state.slots[i];
         const prev = i > 0 ? state.slots[i - 1] : null;
         if (v === 'W') work++;
-        else if (v === 'N') moving++;
         else rest++;
         const line = LINES.indexOf(v);
         const before = prev == null ? line : LINES.indexOf(prev);
@@ -526,7 +523,7 @@
           c.classList.toggle('on', on);
           // Where the line steps to another line, a vertical pen stroke at the left edge of this
           // block: half on the line it leaves, half on the line it reaches, and right through the
-          // middle line when it jumps between WORK and NOT STATIONARY.
+          // middle line if it jumps over one.
           c.classList.toggle('arrive-up', on && before < line);
           c.classList.toggle('arrive-down', on && before > line);
           c.classList.toggle('leave-up', !on && r === before && line < before);
@@ -542,11 +539,7 @@
         x.title = n != null ? result.breaches[n].message : '';
       }
       s.totals.W.textContent = formatHours(work);
-      // Total rest includes rest that isn't stationary, which is also shown on its own line.
-      s.totals.R.textContent = formatHours(rest + moving);
-      s.totals.R.title = 'Total rest, including rest that is not stationary';
-      s.totals.N.textContent = formatHours(moving);
-      s.totals.N.title = 'Rest that is not stationary (already included in the total rest above)';
+      s.totals.R.textContent = formatHours(rest);
       const pageBreaches = result.breaches.filter((b) => Math.floor(b.slots[0] / SLOTS_PER_DAY) === p);
       s.totals.X.textContent = pageBreaches.length ? String(pageBreaches.length) : '';
       s.sheet.classList.toggle('has-breach', pageBreaches.length > 0);
@@ -585,7 +578,7 @@
     const start = planStart();
     const picked = start.custom ? start.from : -1;
     sheets.forEach((s, p) => {
-      for (const row of ['W', 'R', 'N', 'X']) {
+      for (const row of ['W', 'R', 'X']) {
         s.cells[row].forEach((c, q) => {
           c.classList.toggle('now', p * SLOTS_PER_DAY + q === now);
           c.classList.toggle('plan-start', p * SLOTS_PER_DAY + q === picked);
@@ -785,7 +778,7 @@
     const [from, to] = b ? breachWindow(b) : [-1, -1];
     const own = new Set(b ? b.slots : []);
     sheets.forEach((s, p) => {
-      for (const row of ['W', 'R', 'N', 'X']) {
+      for (const row of ['W', 'R', 'X']) {
         s.cells[row].forEach((c, q) => {
           const i = p * SLOTS_PER_DAY + q;
           const inside = i >= from && i < to;
@@ -841,7 +834,7 @@
       const i = p * SLOTS_PER_DAY + q;
       const v = state.slots[i];
       const prev = i > 0 ? state.slots[i - 1] : null;
-      if (v && v !== prev) rows.push([i, v === 'W' ? 'Start work' : v === 'N' ? 'Start rest (not stationary)' : 'Start rest']);
+      if (v && v !== prev) rows.push([i, v === 'W' ? 'Start work' : 'Start rest']);
       else if (!v && prev && q > 0) rows.push([i, prev === 'W' ? 'End work' : 'End rest']);
     }
     if (!rows.length) {
