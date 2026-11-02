@@ -11,19 +11,33 @@
   const SHEETS = [1, 2, 3];
   const MIDDLE = 2;
   const N = PAGES * SLOTS_PER_DAY;
-  // The earlier-work totals cover the days before the first sheet. With the first 1, 2 or 3
-  // sheets (the driver's choice, 2 by default) they make up the 7, 14 or 28 days.
+  // The earlier-work totals cover the days before the sheets. With the first 1, 2 or 3 sheets
+  // on the page (the driver's choice, 2 by default) they make up the 7, 14 or 28 days. The day
+  // before counts as the first sheet when it is shown.
   function priorSheets() {
     return [1, 2, 3].includes(state.priorSheets) ? state.priorSheets : 2;
   }
 
-  function priorOpts() {
-    return { priorStart: FIRST * SLOTS_PER_DAY, priorThrough: priorSheets() };
+  // The page of the first sheet counted: the day before when shown, otherwise the first sheet.
+  function firstCounted() {
+    return state.showDayBefore ? 0 : FIRST;
   }
 
-  // "the first sheet", "the middle sheet", "the last sheet": where the periods end.
+  function priorOpts() {
+    return { priorStart: firstCounted() * SLOTS_PER_DAY, priorThrough: priorSheets() };
+  }
+
+  const SHEET_NAMES = ['the day before', 'the first sheet', 'the middle sheet', 'the last sheet'];
+
+  // Where the periods end, e.g. "the middle sheet".
   function priorEndName() {
-    return ['the first sheet', 'the middle sheet', 'the last sheet'][priorSheets() - 1];
+    return SHEET_NAMES[firstCounted() + priorSheets() - 1];
+  }
+
+  // The sheets counted, e.g. "the day before and the first sheet".
+  function sheetsText() {
+    const names = SHEET_NAMES.slice(firstCounted(), firstCounted() + priorSheets());
+    return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   }
   const STORAGE_KEY = 'ewd-checker-v1';
   const HOUR_LABELS = ['Mid', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
@@ -453,7 +467,7 @@
     syncDayBeforeToggle = () => {
       button.textContent = state.showDayBefore ? 'Remove the day before' : 'Show the day before';
       note.textContent = state.showDayBefore
-        ? 'Its work is not added to the work-before totals: those already include this day.'
+        ? 'It counts as the first of the "Sheets to include" in Work before these sheets.'
         : 'Only needed if you worked late on the day before the first sheet. Without it, that day counts as rest.';
     };
     confirmButton(button, 'Tap again to remove it', () => state.showDayBefore && state.slots
@@ -1039,7 +1053,8 @@
     }
     if (Object.keys(nights).length) out.nights = nights;
     if (h.nightBefore) out.nightBefore = h.nightBefore === 'yes';
-    out.dayBeforeRecorded = state.showDayBefore;
+    // The night into the first sheet counted is never on the sheets: it is before them.
+    out.dayBeforeRecorded = false;
     const longRests = {};
     for (const rule of q.longRests) {
       const key = `long-${q.days(rule)}`;
@@ -1112,7 +1127,7 @@
       input.placeholder = 'e.g. 40';
       input.value = h.workSince || '';
       input.addEventListener('input', () => setHistory({ workSince: input.value }));
-      out.push(field('Work since then, before the first sheet', 'For the 84 hours between 24-hour rests. Needs the date above.', input, el('span', null, 'hours')));
+      out.push(field(`Work since then, before ${SHEET_NAMES[firstCounted()]}`, 'For the 84 hours between 24-hour rests. Needs the date above.', input, el('span', null, 'hours')));
     }
     for (const rule of q.longRests) {
       const days = q.days(rule);
@@ -1120,7 +1135,7 @@
       const before = days - priorSheets();
       const counts = [['', 'Not entered']];
       for (let c = 0; c <= rule.restBlocks.count; c++) counts.push([String(c), String(c)]);
-      out.push(field(`24-hour rests in the ${before} days before`, `${formatDate(pageDate(FIRST - before))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
+      out.push(field(`24-hour rests in the ${before} days before`, `${formatDate(pageDate(firstCounted() - before))} to ${formatDate(pageDate(firstCounted() - 1))} · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
         selectOf(`rest-${key}`, `24-hour rests in the ${before} days before`, counts, h.longRests[key] == null ? '' : String(h.longRests[key]),
           (v) => setHistory({ longRests: { ...state.history.longRests, [key]: v } }))));
     }
@@ -1144,11 +1159,11 @@
         controls.push(label);
       }
       out.push(field(`Night rest breaks in the ${before} days before`,
-        `${formatDate(pageDate(FIRST - before))} to ${formatDate(pageDate(FIRST - 1))}, counting the night into the first sheet · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
+        `${formatDate(pageDate(firstCounted() - before))} to ${formatDate(pageDate(firstCounted() - 1))}, counting the night into ${SHEET_NAMES[firstCounted()]} · for the ${days}-day rule (${rule.restText.toLowerCase()})`,
         ...controls));
     }
-    if (q.nights.some((r) => r.nightRests.consecutive) && !state.showDayBefore) {
-      out.push(field('Was the night into the first sheet a night rest break?', 'At least 7 hours stationary rest between 10pm and 8am. It can pair with a night rest break on the sheets.',
+    if (q.nights.some((r) => r.nightRests.consecutive)) {
+      out.push(field(`Was the night into ${SHEET_NAMES[firstCounted()]} a night rest break?`, 'At least 7 hours stationary rest between 10pm and 8am. It can pair with a night rest break on the sheets.',
         selectOf('rest-night-before', 'Night into the first sheet', [['', 'Not entered'], ['yes', 'Yes'], ['no', 'No']], h.nightBefore,
           (v) => setHistory({ nightBefore: v }))));
     }
@@ -1167,11 +1182,6 @@
     for (const [key, a] of Object.entries(h.nights || {})) set(`rest-${key}`, a && a.count);
     for (const [key, v] of Object.entries(h.longRests || {})) set(`rest-${key}`, v);
     set('rest-night-before', h.nightBefore);
-  }
-
-  // "the first sheet" / "the first two sheets" / "all three sheets".
-  function sheetsText() {
-    return ['the first sheet', 'the first two sheets', 'all three sheets'][priorSheets() - 1];
   }
 
   // How many sheets go with the totals: 1, 2 or 3. The days before change to suit.
@@ -1197,7 +1207,7 @@
       b.setAttribute('aria-pressed', String(on));
     });
     const k = priorSheets();
-    $('#prior-sheets-help').textContent = `The dates below plus ${sheetsText()} make up each period, ending with ${priorEndName()} (${formatDate(pageDate(FIRST + k - 1))}).`;
+    $('#prior-sheets-help').textContent = `The dates below plus ${sheetsText()} make up each period, ending with ${priorEndName()} (${formatDate(pageDate(firstCounted() + k - 1))}).`;
   }
 
   // Rebuilt only when the work option or dates change, so typing in a box keeps its focus.
@@ -1207,7 +1217,7 @@
     const rules = priorRules();
     section.hidden = !rules.length;
     syncPriorChoice();
-    const signature = `${state.ruleset}|${state.startDate}|${priorSheets()}`;
+    const signature = `${state.ruleset}|${state.startDate}|${priorSheets()}|${state.showDayBefore}`;
     if (signature !== earlierBuiltFor) {
       earlierBuiltFor = signature;
       fields.replaceChildren(...rules.map((rule) => {
@@ -1221,7 +1231,7 @@
         const label = el('label', 'earlier-label', `${longNight ? 'Long/night work' : 'Work'} in the ${days} days before`);
         label.htmlFor = id;
         const dates = el('span', 'earlier-dates',
-          `${formatDate(pageDate(FIRST - days))} to ${formatDate(pageDate(FIRST - 1))} · for the ${days + priorSheets()}-day limit, ending with ${priorEndName()} (${d.work.toLowerCase()})`);
+          `${formatDate(pageDate(firstCounted() - days))} to ${formatDate(pageDate(firstCounted() - 1))} · for the ${days + priorSheets()}-day limit, ending with ${priorEndName()} (${d.work.toLowerCase()})`);
         const row = el('span', 'earlier-input');
         const input = el('input');
         input.id = id;
