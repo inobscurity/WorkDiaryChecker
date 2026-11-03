@@ -377,8 +377,7 @@
 
     const top = el('div', 'ps-top');
     const title = el('div', 'ps-title');
-    title.append(el('div', 'ps-sub', p < FIRST ? 'Work Diary Checker · the day before' : `Work Diary Checker · sheet ${p} of 3`),
-      el('div', 'ps-h1', 'NATIONAL DRIVER WORK DIARY DAILY SHEET'));
+    title.append(el('div', 'ps-h1', 'NATIONAL DRIVER WORK DIARY DAILY SHEET'));
     top.append(el('div', 'ps-origin', 'A copy printed from Work Diary Checker. It is not a work diary.'), title,
       el('div', 'ps-wdno', `WORK DIARY NO. ${pg.diaryNo || ''}`));
     ps.append(top, el('div', 'ps-band', 'DRIVER IDENTIFICATION'));
@@ -483,7 +482,7 @@
     rows.append(label('MY WORK'), graphWrap, printField('Total Work:', formatHours(work), 'ps-total'));
     rows.append(label('MY REST'), printField('Total Rest:', formatHours(rest), 'ps-total'));
     rows.append(el('div', 'ps-label ps-blank'), axis());
-    acts.append(rows, el('div', 'ps-warning', 'DO NOT DRIVE IF YOU ARE IMPAIRED BY FATIGUE OR UNFIT TO DRIVE'));
+    acts.append(rows);
     ps.append(acts);
 
     const bottom = el('div', 'ps-bottom');

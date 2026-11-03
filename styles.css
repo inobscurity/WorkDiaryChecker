@@ -405,7 +405,6 @@ body.detail-open { padding-bottom: 260px; }
 .ps-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; height: 10mm; }
 .ps-origin { font-size: 6.5pt; color: #444; }
 .ps-title { text-align: center; }
-.ps-sub { font-size: 8pt; color: #333; }
 .ps-h1 { font-size: 13pt; font-weight: 700; letter-spacing: 0.01em; }
 .ps-wdno { justify-self: end; font-size: 9pt; color: #333; }
 .ps-band { background: var(--ps-grey); color: #fff; text-align: center; font-weight: 700; letter-spacing: 0.08em; font-size: 7pt; padding: 0.6mm 0; }
@@ -470,10 +469,6 @@ body.detail-open { padding-bottom: 260px; }
 .g-night { fill: #e4e4e4; }
 .g-pen { stroke: #1a2f6b; stroke-width: 2.2; fill: none; vector-effect: non-scaling-stroke; stroke-linecap: square; }
 .g-line { stroke-linejoin: miter; }
-.ps-warning {
-  position: absolute; left: 18%; top: 34%; transform: rotate(-10deg); font-size: 16pt; font-weight: 700;
-  color: rgba(0, 0, 0, 0.08); white-space: nowrap; pointer-events: none;
-}
 .ps-bottom { display: grid; grid-template-columns: 95mm 1fr; gap: 6mm; height: 34mm; }
 .ps-sign { display: flex; flex-direction: column; gap: 0.8mm; justify-content: flex-end; }
 .ps-small { font-size: 6pt; }
