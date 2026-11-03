@@ -42,7 +42,20 @@
   const STORAGE_KEY = 'ewd-checker-v1';
   const HOUR_LABELS = ['Mid', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
     'Noon', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
-  const OPTIONS = [['standard', 'Standard'], ['bfm', 'BFM'], ['afm', 'AFM']];
+  // The boxes on a diary daily sheet.
+  const HOURS_OPTIONS = [['standard', 'Standard'], ['standard-bus', 'Standard Bus'], ['bfm', 'BFM'],
+    ['afm', 'AFM'], ['ach', 'ACH'], ['exemption', 'Exemption hours (for this 24hr period only)']];
+  const TWO_UP_OPTIONS = [['standard', 'Standard'], ['bfm', 'BFM'], ['afm', 'AFM'], ['ach', 'ACH'], ['exemption', 'Exemption hours']];
+  const ZONES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'].map((z) => [z, z]);
+  const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  // What is kept for each daily sheet, besides the time.
+  function blankPage() {
+    return {
+      rego: '', diaryNo: '', zone: '', checkTime: '', comments: '',
+      twoUp: '', twoUpLicence: '', twoUpIssued: '', twoUpDiary: '', twoUpOption: '',
+    };
+  }
 
   const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -74,7 +87,9 @@
       dateChosen: false,
       driver: '',
       licence: '',
-      pages: Array.from({ length: PAGES }, () => ({ rego: '', twoUp: '' })),
+      pages: Array.from({ length: PAGES }, blankPage),
+      // The TWO-UP line: 1 where the driver marked two-up driving.
+      pair: new Array(N).fill(0),
       slots: new Array(N).fill('R'),
       changes: {},
       // Start of "Your next limits": null for the time now, or { date, time } the driver picked.
@@ -96,7 +111,7 @@
       // Saves from before the day-before sheet held three days: move them along by one.
       if (saved.slots.length === 3 * SLOTS_PER_DAY) {
         saved.slots = new Array(SLOTS_PER_DAY).fill('R').concat(saved.slots);
-        saved.pages = [{ rego: '', twoUp: '' }].concat(saved.pages || []);
+        saved.pages = [blankPage()].concat(saved.pages || []);
         saved.changes = Object.fromEntries(Object.entries(saved.changes || {})
           .map(([i, v]) => [String(Number(i) + SLOTS_PER_DAY), v]));
       }
@@ -105,7 +120,9 @@
       state.history = { ...defaultState().history, ...(saved.history || {}) };
       // Every block is work or rest. Older saves had unmarked blocks, which count as rest.
       state.slots = state.slots.map((v) => (v === 'W' ? 'W' : 'R'));
-      while (state.pages.length < PAGES) state.pages.push({ rego: '', twoUp: '' });
+      while (state.pages.length < PAGES) state.pages.push(blankPage());
+      state.pages = state.pages.map((pg) => ({ ...blankPage(), ...pg }));
+      if (!Array.isArray(state.pair) || state.pair.length !== N) state.pair = new Array(N).fill(0);
       if (!state.dateChosen) state.startDate = yesterdayISO();
       return state;
     } catch (e) {
@@ -216,17 +233,20 @@
       state.planFrom = null;
       state.showDayBefore = false;
       state.pages = fresh.pages;
+      state.pair = fresh.pair;
       state.example = false;
       clearEarlierBoxes();
-      sheets.forEach((s) => {
-        s.rego.value = '';
-        s.twoUp.value = '';
-      });
       syncDayBeforeToggle();
       update(true);
     });
     const print = $('#print');
-    if (print) print.addEventListener('click', () => window.print());
+    if (print) {
+      print.addEventListener('click', () => {
+        buildPrintSheets();
+        window.print();
+      });
+    }
+    window.addEventListener('beforeprint', buildPrintSheets);
   }
 
   // Asks for a second tap instead of a dialog, so it also works where dialogs are blocked.
@@ -280,6 +300,225 @@
     });
   }
 
+  // A row of tick boxes like those on a diary sheet. With onPick the boxes can be tapped; without
+  // it they only show what is ticked.
+  function tickGroup(items, isOn, onPick) {
+    const wrap = el('span', 'ticks');
+    const boxes = items.map(([value, label]) => {
+      const b = el(onPick ? 'button' : 'span', 'tick-item');
+      if (onPick) {
+        b.type = 'button';
+        b.addEventListener('click', () => onPick(value));
+      }
+      b.dataset.value = value;
+      b.append(el('span', 'tick'), document.createTextNode(label));
+      return b;
+    });
+    wrap.append(...boxes);
+    wrap.sync = () => boxes.forEach((b) => {
+      const on = isOn(b.dataset.value);
+      b.classList.toggle('ticked', on);
+      b.firstChild.textContent = on ? '✕' : '';
+      if (onPick) b.setAttribute('aria-pressed', String(on));
+    });
+    wrap.sync();
+    return wrap;
+  }
+
+  // ---- Printed sheets -----------------------------------------------------------------------
+  //
+  // Each daily sheet prints on its own landscape page, laid out like a National Driver Work
+  // Diary daily sheet. They are built fresh just before printing.
+
+  const SVG = 'http://www.w3.org/2000/svg';
+
+  function svgEl(tag, attrs) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  }
+
+  // Ticks along a row of the graph: an hour line, a longer tick at the half hour, short ticks at
+  // the quarters, from the top and bottom edges of the row.
+  function drawTicks(svg, top, height) {
+    for (let q = 0; q <= SLOTS_PER_DAY; q++) {
+      const x = q * 10;
+      if (q % 4 === 0) {
+        svg.append(svgEl('line', { x1: x, y1: top, x2: x, y2: top + height, class: 'g-hour' }));
+      } else {
+        const len = height * (q % 2 === 0 ? 0.32 : 0.18);
+        svg.append(svgEl('line', { x1: x, y1: top, x2: x, y2: top + len, class: 'g-tick' }));
+        svg.append(svgEl('line', { x1: x, y1: top + height - len, x2: x, y2: top + height, class: 'g-tick' }));
+      }
+    }
+  }
+
+  function printBoxes(items, isOn, cls) {
+    const wrap = el('span', `pb ${cls || ''}`);
+    for (const [value, label] of items) {
+      const item = el('span', `pb-item${isOn(value) ? ' on' : ''}`);
+      item.append(el('span', 'pb-box', isOn(value) ? '✕' : ''), document.createTextNode(label));
+      wrap.append(item);
+    }
+    return wrap;
+  }
+
+  function printField(label, value, cls) {
+    const f = el('div', `pf ${cls || ''}`);
+    f.append(el('span', 'pf-label', label), el('span', 'pf-value', value || ''));
+    return f;
+  }
+
+  function printSheet(p) {
+    const pg = state.pages[p];
+    const date = pageDate(p);
+    const base = p * SLOTS_PER_DAY;
+    const ps = el('section', 'ps');
+
+    const top = el('div', 'ps-top');
+    const title = el('div', 'ps-title');
+    title.append(el('div', 'ps-sub', p < FIRST ? 'Work Diary Checker · the day before' : `Work Diary Checker · sheet ${p} of 3`),
+      el('div', 'ps-h1', 'NATIONAL DRIVER WORK DIARY DAILY SHEET'));
+    top.append(el('div', 'ps-origin', 'A copy printed from Work Diary Checker. It is not a work diary.'), title,
+      el('div', 'ps-wdno', `WORK DIARY NO. ${pg.diaryNo || ''}`));
+    ps.append(top, el('div', 'ps-band', 'DRIVER IDENTIFICATION'));
+
+    const ident = el('div', 'ps-ident');
+    const day = el('div', 'pf pf-day');
+    day.append(el('span', 'pf-label', 'Day (optional):'));
+    const days = el('span', 'ps-days');
+    WEEKDAYS.forEach((d, k) => days.append(el('span', `ps-dayname${k === date.getDay() ? ' on' : ''}`, d)));
+    day.append(days);
+    const hours = el('div', 'pf pf-hours');
+    hours.append(el('span', 'pf-label', 'Driver Hours Option'), printBoxes(HOURS_OPTIONS, (v) => RULESETS[state.ruleset].option === v, 'pb-hours'));
+    const zone = el('div', 'pf pf-zone');
+    zone.append(el('span', 'pf-label', 'Time Zone: State/Territory (driver base)'), printBoxes(ZONES, (v) => pg.zone === v, 'pb-cells'));
+    ident.append(
+      printField("Driver's Name:", state.driver, 'pf-name'),
+      printField('Date:', date.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }), 'pf-date'),
+      day, hours,
+      printField('Time of daily check (if required):', pg.checkTime, 'pf-check'),
+      printField('Licence No:', state.licence, 'pf-licence'),
+      printField('Number Plate:', pg.rego, 'pf-plate'),
+      zone
+    );
+    ps.append(ident);
+
+    // Details of activities: comments, odometer readings and places in the hour of each change,
+    // the TWO-UP line, and the work and rest graph.
+    const acts = el('div', 'ps-acts');
+    acts.append(el('div', 'ps-side', 'DETAILS OF ACTIVITIES FOR THIS DAY'));
+    const rows = el('div', 'ps-rows');
+    const label = (text, small) => {
+      const l = el('div', 'ps-label');
+      l.append(el('strong', null, text));
+      if (small) l.append(el('small', null, small));
+      return l;
+    };
+    rows.append(label('Number Plate Change and Comments', '(optional) (e.g. delays, authorised officer notes)'),
+      el('div', 'ps-comments', pg.comments || ''));
+    const odo = el('div', 'ps-hours ps-odo');
+    const place = el('div', 'ps-hours ps-place');
+    const odoCols = [];
+    const placeCols = [];
+    for (let h = 0; h < 24; h++) {
+      odoCols.push(odo.appendChild(el('div', 'ps-col')));
+      placeCols.push(place.appendChild(el('div', 'ps-col')));
+    }
+    for (let q = 0; q < SLOTS_PER_DAY; q++) {
+      const c = state.changes[base + q];
+      if (!c) continue;
+      const h = Math.floor(q / 4);
+      if (c.odometer) odoCols[h].append(el('span', null, c.odometer));
+      if (c.location) placeCols[h].append(el('span', null, `${clock(base + q)} ${c.location}`));
+    }
+    rows.append(label('ODOMETER READING'), odo, el('div', 'ps-calc ps-calc-top', 'Space to calculate work and rest hours (optional)'));
+    rows.append(label('NAME OF PLACE AT WORK AND REST CHANGE', '(e.g. rest area, truck stop, suburb or town)'), place);
+
+    const pairSvg = svgEl('svg', { viewBox: '0 0 960 20', preserveAspectRatio: 'none', class: 'ps-svg ps-pair' });
+    for (let q = 0; q <= SLOTS_PER_DAY; q++) {
+      const len = q % 4 === 0 ? 9 : q % 2 === 0 ? 6 : 4;
+      pairSvg.append(svgEl('line', { x1: q * 10, y1: 20 - len, x2: q * 10, y2: 20, class: 'g-tick' }));
+    }
+    for (let q = 0; q < SLOTS_PER_DAY; q++) {
+      if (!state.pair[base + q]) continue;
+      pairSvg.append(svgEl('line', { x1: q * 10, y1: 10, x2: q * 10 + 10, y2: 10, class: 'g-pen' }));
+      if (!(base + q > 0 && state.pair[base + q - 1])) pairSvg.append(svgEl('line', { x1: q * 10, y1: 0, x2: q * 10, y2: 20, class: 'g-pen' }));
+      if (!(base + q < N - 1 && state.pair[base + q + 1])) pairSvg.append(svgEl('line', { x1: q * 10 + 10, y1: 0, x2: q * 10 + 10, y2: 20, class: 'g-pen' }));
+    }
+    rows.append(label('TWO-UP'), pairSvg);
+
+    const axis = () => {
+      const a = el('div', 'ps-axis');
+      for (let h = 0; h <= 24; h++) {
+        const t = el('span', h % 12 === 0 ? 'ps-axis-word' : null, h === 0 || h === 24 ? 'midnight' : h === 12 ? 'midday' : String(h % 12));
+        t.style.left = `${(h / 24) * 100}%`;
+        a.append(t);
+      }
+      return a;
+    };
+    rows.append(el('div', 'ps-label ps-blank'), axis(), el('div', 'ps-calc ps-calc-small', 'Calculate totals (optional)'));
+
+    let work = 0;
+    let rest = 0;
+    for (let q = 0; q < SLOTS_PER_DAY; q++) (state.slots[base + q] === 'W' ? work++ : rest++);
+    const graph = svgEl('svg', { viewBox: '0 0 960 100', preserveAspectRatio: 'none', class: 'ps-svg ps-graph' });
+    // Night hours shaded, as on the diary sheet.
+    graph.append(svgEl('rect', { x: 0, y: 0, width: 320, height: 100, class: 'g-night' }));
+    graph.append(svgEl('rect', { x: 880, y: 0, width: 80, height: 100, class: 'g-night' }));
+    drawTicks(graph, 0, 50);
+    drawTicks(graph, 50, 50);
+    graph.append(svgEl('line', { x1: 0, y1: 50, x2: 960, y2: 50, class: 'g-hour' }));
+    let d = '';
+    let prevY = null;
+    for (let q = 0; q < SLOTS_PER_DAY; q++) {
+      const y = state.slots[base + q] === 'W' ? 25 : 75;
+      d += prevY == null ? `M0 ${y}` : y !== prevY ? ` L${q * 10} ${prevY} L${q * 10} ${y}` : '';
+      prevY = y;
+    }
+    d += ` L960 ${prevY}`;
+    graph.append(svgEl('path', { d, class: 'g-pen g-line' }));
+    const graphWrap = el('div', 'ps-graph-wrap');
+    graphWrap.append(graph);
+    rows.append(label('MY WORK'), graphWrap, printField('Total Work:', formatHours(work), 'ps-total'));
+    rows.append(label('MY REST'), printField('Total Rest:', formatHours(rest), 'ps-total'));
+    rows.append(el('div', 'ps-label ps-blank'), axis());
+    acts.append(rows, el('div', 'ps-warning', 'DO NOT DRIVE IF YOU ARE IMPAIRED BY FATIGUE OR UNFIT TO DRIVE'));
+    ps.append(acts);
+
+    const bottom = el('div', 'ps-bottom');
+    const sign = el('div', 'ps-sign');
+    sign.append(el('div', 'pf-label', "Driver's Signature:"),
+      el('div', 'ps-small', 'To the best of my knowledge and belief the information I have recorded on this daily sheet is true and correct'),
+      el('div', 'ps-signbox'),
+      el('div', 'ps-must', 'YOU MUST SIGN THIS SHEET BEFORE STARTING A NEW DAILY SHEET'));
+    const pairId = el('div', 'ps-pairid');
+    const pairGrid = el('div', 'ps-pairgrid');
+    const pairHours = el('div', 'pf');
+    pairHours.append(el('span', 'pf-label', 'Two-up Driver Hours Option'), printBoxes(TWO_UP_OPTIONS, (v) => pg.twoUpOption === v, 'pb-small'));
+    const issued = el('div', 'pf');
+    issued.append(el('span', 'pf-label', "Two-up Driver's Licence Issued:"), printBoxes(ZONES, (v) => pg.twoUpIssued === v, 'pb-cells pb-small'));
+    pairGrid.append(
+      printField("Two-up Driver's Name:", pg.twoUp),
+      printField("Two-up Driver's Licence No:", pg.twoUpLicence),
+      pairHours,
+      printField("Two-up Driver's Work Diary & Page No:", pg.twoUpDiary),
+      issued,
+      printField("Two-up Driver's Signature:", '')
+    );
+    pairId.append(el('div', 'ps-band', 'TWO-UP DRIVER IDENTIFICATION'), pairGrid);
+    bottom.append(sign, pairId);
+    ps.append(bottom);
+    return ps;
+  }
+
+  function buildPrintSheets() {
+    const wrap = $('#print-sheets');
+    if (!wrap) return;
+    const pages = state.showDayBefore ? [0, ...SHEETS] : SHEETS;
+    wrap.replaceChildren(...pages.map(printSheet));
+  }
+
   function buildSheet(p) {
     const sheet = el('article', `sheet${p < FIRST ? ' sheet-before' : ''}`);
     sheet.setAttribute('aria-label', p < FIRST ? 'The day before' : `Daily sheet ${p}`);
@@ -299,24 +538,40 @@
       meta.append(b);
       return b;
     };
+    // Fields kept for this sheet, shown from the state on every full render.
+    const syncers = [];
+    const field = (key, placeholder, inputMode) => {
+      const input = el('input', 'meta-input');
+      input.placeholder = placeholder || '';
+      if (inputMode) input.inputMode = inputMode;
+      input.autocomplete = 'off';
+      input.addEventListener('input', () => {
+        state.pages[p][key] = input.value;
+        save();
+      });
+      syncers.push(() => {
+        if (document.activeElement !== input) input.value = state.pages[p][key] || '';
+      });
+      return input;
+    };
+    // A row of tick boxes for one choice; tapping the ticked box again clears it.
+    const pick = (key, items, after) => {
+      const group = tickGroup(items, (v) => state.pages[p][key] === v, (v) => {
+        state.pages[p][key] = state.pages[p][key] === v ? '' : v;
+        if (after) after(state.pages[p][key]);
+        update(true);
+      });
+      syncers.push(group.sync);
+      return group;
+    };
+
     const date = el('span', 'meta-value');
     const driver = el('span', 'meta-value');
     const licence = el('span', 'meta-value');
-    const options = el('span', 'meta-value options');
-    const rego = el('input', 'meta-input');
-    rego.value = state.pages[p].rego;
-    rego.placeholder = 'e.g. XQ12AB';
-    rego.addEventListener('input', () => {
-      state.pages[p].rego = rego.value;
-      save();
-    });
-    const twoUp = el('input', 'meta-input');
-    twoUp.value = state.pages[p].twoUp;
-    twoUp.addEventListener('input', () => {
-      state.pages[p].twoUp = twoUp.value;
-      save();
-    });
-    const dateBox = box('Day / date', date);
+    const options = tickGroup(HOURS_OPTIONS, (v) => RULESETS[state.ruleset].option === v);
+    options.classList.add('hours-options');
+    syncers.push(options.sync);
+    const dateBox = box('Date', date);
     if (p === MIDDLE) {
       // The middle sheet's date is changeable here; the other sheets follow it.
       const edit = el('span', 'date-edit');
@@ -332,11 +587,18 @@
       dateBox.append(edit);
       dateBox.classList.add('meta-box-date');
     }
-    box('Driver name', driver);
-    box('Driver licence no.', licence);
-    box('Work option', options);
-    box('Vehicle registration', rego);
-    const twoUpBox = box('Two-up driver name', twoUp);
+    box("Driver's name", driver);
+    box('Licence no.', licence);
+    const rego = field('rego', 'e.g. XQ12AB');
+    box('Number plate', rego);
+    box('Work diary no.', field('diaryNo', 'Optional'));
+    // The time zone is only recorded on the sheet; it doesn't change any times or checks. Picking
+    // one fills it in on the other sheets that have none.
+    box('Time zone: state/territory (driver base)', pick('zone', ZONES, (zone) => {
+      if (zone) state.pages.forEach((pg) => { if (!pg.zone) pg.zone = zone; });
+    })).classList.add('meta-box-wide');
+    box('Driver hours option', options).classList.add('meta-box-wide');
+    box('Time of daily check (if required)', field('checkTime', 'e.g. 05:45', 'numeric'));
     sheet.append(meta);
 
     // The 24-hour graph: hour numbers, a WORK line, a REST line and a line for breaches.
@@ -351,9 +613,9 @@
     });
     grid.append(el('div', 'total-head', 'Total hours'));
 
-    const cells = { W: [], R: [], X: [] };
+    const cells = { W: [], R: [], T: [], X: [] };
     const totals = {};
-    for (const [row, label] of [['W', 'WORK'], ['R', 'REST'], ['X', 'BREACH']]) {
+    for (const [row, label] of [['W', 'WORK'], ['R', 'REST'], ['T', 'TWO-UP'], ['X', 'BREACH']]) {
       grid.append(el('div', `row-label row-${row}`, label));
       for (let q = 0; q < SLOTS_PER_DAY; q++) {
         const cell = el('div', `cell row-${row}${q % 4 === 0 ? ' hour-start' : ''}${q % 4 === 2 ? ' half' : ''}`);
@@ -383,11 +645,35 @@
     changesWrap.append(changesScroll);
     sheet.append(changesWrap);
 
+    const notes = el('div', 'sheet-notes');
+    const comments = el('label', 'notes-field');
+    comments.append(el('span', 'meta-label', 'Number plate change and comments (optional)'), field('comments', 'e.g. delays, authorised officer notes'));
+    notes.append(comments);
+    sheet.append(notes);
+
+    // Two-up driver identification, as at the foot of a diary daily sheet.
+    const pair = el('div', 'two-up-id');
+    pair.append(el('div', 'two-up-title', 'TWO-UP DRIVER IDENTIFICATION'));
+    const pairGrid = el('div', 'sheet-meta two-up-meta');
+    const pairBox = (label, content) => {
+      const b = el('div', 'meta-box');
+      b.append(el('span', 'meta-label', label), content);
+      pairGrid.append(b);
+      return b;
+    };
+    pairBox("Two-up driver's name", field('twoUp', 'Optional'));
+    pairBox("Two-up driver's licence no.", field('twoUpLicence', 'Optional'));
+    pairBox('Two-up driver hours option', pick('twoUpOption', TWO_UP_OPTIONS)).classList.add('meta-box-wide');
+    pairBox("Two-up driver's work diary & page no.", field('twoUpDiary', 'Optional'));
+    pairBox("Two-up driver's licence issued", pick('twoUpIssued', ZONES)).classList.add('meta-box-wide');
+    pair.append(pairGrid);
+    sheet.append(pair);
+
     const breaches = el('div', 'sheet-breaches');
     sheet.append(breaches);
 
     $('#sheets').append(sheet);
-    sheets.push({ sheet, date, driver, licence, options, twoUpBox, rego, twoUp, cells, totals, changesBody, breaches });
+    sheets.push({ sheet, date, driver, licence, cells, totals, changesBody, breaches, sync: () => syncers.forEach((f) => f()) });
   }
 
   // ---- Entering time ------------------------------------------------------------------------
@@ -406,8 +692,14 @@
       if (!cell || cell.dataset.row === 'X' || e.button > 0) return;
       e.preventDefault();
       const i = Number(cell.dataset.i);
-      drag = { grid, last: i };
-      paint(i, i, cell.dataset.row);
+      if (cell.dataset.row === 'T') {
+        // The TWO-UP line: dragging from an empty box draws, from a marked box rubs out.
+        drag = { grid, last: i, pair: state.pair[i] ? 0 : 1 };
+        paintPair(i, i);
+      } else {
+        drag = { grid, last: i };
+        paint(i, i, cell.dataset.row);
+      }
       grid.setPointerCapture(e.pointerId);
     });
     // The row under the finger decides: the WORK row marks work, the REST row marks rest.
@@ -416,7 +708,13 @@
       const cell = cellAt(e.clientX, e.clientY, grid);
       if (!cell || cell.dataset.row === 'X') return;
       const i = Number(cell.dataset.i);
-      paint(Math.min(i, drag.last), Math.max(i, drag.last), cell.dataset.row);
+      if (drag.pair != null) {
+        paintPair(Math.min(i, drag.last), Math.max(i, drag.last));
+      } else if (cell.dataset.row !== 'T') {
+        paint(Math.min(i, drag.last), Math.max(i, drag.last), cell.dataset.row);
+      } else {
+        return;
+      }
       drag.last = i;
     });
     const end = () => {
@@ -437,6 +735,11 @@
       const b = result.breaches[n];
       selectBreach(selectedKey === breachKey(b) ? null : b);
     });
+  }
+
+  function paintPair(from, to) {
+    for (let i = from; i <= to; i++) state.pair[i] = drag.pair;
+    update(false);
   }
 
   function paint(from, to, value) {
@@ -561,6 +864,13 @@
           c.classList.toggle('longnight', on && row === 'W' && result.longNight.has(i));
           c.title = `${fmtTime(i)}–${clock(i + 1)}`;
         });
+        // TWO-UP line, with an upright bar where each stretch starts and ends.
+        const pair = !!state.pair[i];
+        const tc = s.cells.T[q];
+        tc.classList.toggle('on', pair);
+        tc.classList.toggle('t-start', pair && !(i > 0 && state.pair[i - 1]));
+        tc.classList.toggle('t-end', pair && !(i < N - 1 && state.pair[i + 1]));
+        tc.title = `${fmtTime(i)}–${clock(i + 1)} two-up`;
         const x = s.cells.X[q];
         const n = breachSlots.get(i);
         x.classList.toggle('on', n != null);
@@ -568,6 +878,9 @@
       }
       s.totals.W.textContent = formatHours(work);
       s.totals.R.textContent = formatHours(rest);
+      let paired = 0;
+      for (let q = 0; q < SLOTS_PER_DAY; q++) if (state.pair[base + q]) paired++;
+      s.totals.T.textContent = paired ? formatHours(paired) : '';
       const pageBreaches = result.breaches.filter((b) => Math.floor(b.slots[0] / SLOTS_PER_DAY) === p);
       s.totals.X.textContent = pageBreaches.length ? String(pageBreaches.length) : '';
       s.sheet.classList.toggle('has-breach', pageBreaches.length > 0);
@@ -578,12 +891,7 @@
       if (p === MIDDLE) syncMiddleDate();
       s.driver.textContent = state.driver || '—';
       s.licence.textContent = state.licence || '—';
-      s.options.replaceChildren(...OPTIONS.map(([id, label]) => {
-        const o = el('span', `option${ruleset.option === id ? ' ticked' : ''}`, label);
-        o.prepend(el('span', 'tick', ruleset.option === id ? '✕' : ''));
-        return o;
-      }));
-      s.twoUpBox.hidden = !ruleset.twoUp;
+      s.sync();
       renderChanges(s, p);
       renderSheetBreaches(s, pageBreaches);
     });
@@ -594,6 +902,7 @@
       renderSummary();
       renderLimits(ruleset);
       renderPlanner();
+      buildPrintSheets();
     }
     markNow();
     applySelection();

@@ -127,6 +127,24 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sev-severe { background: #c4161c; }
 .sev-critical { background: #7d0b10; }
 
+/* ---- TWO-UP line ---- */
+
+.row-label.row-T { background: #4f6f6c; font-size: 0.68rem; }
+.cell.row-T { background: #fbfcfb; }
+.cell.row-T.on::after {
+  content: ""; position: absolute; left: -1px; right: 0; top: calc(50% - 1.5px); height: 3px; background: var(--pen);
+}
+/* Upright bars, the height of the box, where a two-up stretch starts and ends. */
+.cell.row-T.t-start::before { content: ""; position: absolute; left: -1px; top: 3px; bottom: 3px; width: 3px; background: var(--pen); }
+.cell.row-T.t-end { background: linear-gradient(90deg, transparent calc(100% - 3px), var(--pen) 0) no-repeat center / 100% calc(100% - 6px); }
+.total.row-T { font-size: 0.9rem; }
+
+.sheet-notes { padding: 0 16px 8px; }
+.notes-field { display: flex; flex-direction: column; gap: 2px; }
+.two-up-id { margin: 0 16px 12px; border: 1px solid var(--grid-line); border-radius: 4px; overflow: hidden; }
+.two-up-title { background: #4f6f6c; color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; padding: 4px 10px; }
+.two-up-meta { border-bottom: 0; }
+
 /* ---- The day before ---- */
 
 .day-before-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; }
@@ -222,9 +240,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   padding: 2px 8px; min-height: 32px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
 }
 .meta-input:focus { outline: none; border-bottom-color: var(--diary); }
-.options { display: flex; gap: 12px; flex-wrap: wrap; font-family: inherit; font-size: 0.85rem; color: var(--ink); }
-.option { display: inline-flex; align-items: center; gap: 4px; }
-.option.ticked { font-weight: 700; }
+.ticks { display: flex; gap: 6px 12px; flex-wrap: wrap; font-size: 0.85rem; color: var(--ink); }
+.tick-item { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: none; border: 0; padding: 2px 0; }
+button.tick-item { cursor: pointer; min-height: 32px; }
+.tick-item.ticked { font-weight: 700; }
+.meta-box-wide { grid-column: span 2; }
+@media (max-width: 600px) { .meta-box-wide { grid-column: auto; } }
 .tick { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1.5px solid var(--diary); background: #fff; color: var(--pen); font-size: 0.8rem; font-weight: 800; line-height: 1; }
 
 /* 24-hour graph */
@@ -232,7 +253,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .grid {
   display: grid;
   grid-template-columns: var(--label-col) repeat(96, minmax(7px, 1fr)) var(--total-col);
-  grid-template-rows: 24px 40px 40px 20px;
+  grid-template-rows: 24px 40px 40px 28px 20px;
   min-width: 860px;
   user-select: none;
   -webkit-user-select: none;
@@ -360,43 +381,104 @@ body.detail-open { padding-bottom: 260px; }
   .field, .field-wide { flex-basis: 100%; }
 }
 
+/* ---- Printed daily sheets ---- */
+
+.print-sheets { display: none; }
+
 @media print {
-  @page { size: A4 landscape; margin: 10mm; }
-  /* Keep the diary's colours: browsers leave backgrounds out of printing by default. */
+  @page { size: A4 landscape; margin: 8mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { background: #fff; }
+  body { background: #fff; color: #000; }
+  /* The breach summary prints first, then one diary-style page per sheet. */
   .app-header, .controls, .hint, .buttons, .limits, .planner, .breach-detail, .earlier,
-  .day-before-bar { display: none; }
+  #sheets, .footer { display: none !important; }
   .wrap { max-width: none; padding: 0; }
   .summary { break-inside: avoid; }
-  .sheet { break-inside: avoid; break-before: page; box-shadow: none; margin: 0; }
-  .grid-scroll { overflow: visible; padding: 8px 4px 4px; }
-  .grid { min-width: 0; grid-template-columns: 56px repeat(96, minmax(0, 1fr)) 52px; }
-  .cell.now, .cell.plan-start { box-shadow: none; }
-
-  /* The pen lines and breach bars as borders, which print even if colours are turned off. */
-  .cell.row-W.on::after, .cell.row-R.on::after {
-    background: none; height: 0; border-top: 5px solid var(--pen);
-  }
-  .cell.row-W.on.breach::after { border-top-color: var(--red); }
-  .cell.arrive-up::before, .cell.arrive-down::before, .cell.leave-up::before,
-  .cell.leave-down::before, .cell.pass::before {
-    background: none; width: 0; border-left: 3px solid var(--pen);
-  }
-  .cell.row-X.on { background: none; border-top: 10px solid var(--red); }
-
-  /* Compact, so each sheet with its changes and breaches fits a page. */
-  .date-edit { display: none; }
-  .sheet { break-inside: auto; font-size: 12px; }
-  .sheet-head, .sheet-meta, .grid-scroll { break-inside: avoid; }
-  .meta-box { min-height: 0; padding: 3px 8px 4px; }
-  .changes { padding: 2px 12px 6px; }
-  .changes table { margin-top: 2px; font-size: 11px; }
-  .changes th, .changes td { padding: 2px 6px; }
-  .change-input { min-height: 0; padding: 0; }
-  .sheet-breaches:not(:empty) { padding: 2px 12px 8px; }
-  .sheet-breaches ul { margin-top: 2px; }
-  .breach-item { margin: 1px 0; font-size: 11px; }
-  .footer { font-size: 10px; padding: 8px 0 0; }
+  .print-sheets { display: block; }
 }
 
+.ps {
+  width: 281mm; height: 193mm; break-before: page; break-inside: avoid; position: relative; overflow: hidden;
+  font: 7.5pt/1.2 Arial, Helvetica, sans-serif; color: #000; display: flex; flex-direction: column; gap: 1.5mm;
+  --ps-grey: #8f8f8f; --ps-light: #ececec; --ps-line: #000;
+}
+.ps-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; height: 10mm; }
+.ps-origin { font-size: 6.5pt; color: #444; }
+.ps-title { text-align: center; }
+.ps-sub { font-size: 8pt; color: #333; }
+.ps-h1 { font-size: 13pt; font-weight: 700; letter-spacing: 0.01em; }
+.ps-wdno { justify-self: end; font-size: 9pt; color: #333; }
+.ps-band { background: var(--ps-grey); color: #fff; text-align: center; font-weight: 700; letter-spacing: 0.08em; font-size: 7pt; padding: 0.6mm 0; }
+.ps-ident {
+  background: var(--ps-light); padding: 1.5mm 2.5mm 2mm; display: grid; gap: 1.2mm 3mm;
+  grid-template-columns: 50mm 33mm 33mm 38mm 52mm 1fr;
+  grid-template-areas: "name name date day hours check" "licence plate zone zone hours check";
+}
+.pf { display: flex; flex-direction: column; gap: 0.6mm; min-width: 0; }
+.pf-label { font-size: 7pt; }
+.pf-value { display: block; min-height: 6.5mm; border: 0.25mm solid #777; background: #fff; padding: 1mm 1.5mm; font-size: 9pt; font-family: "Bradley Hand", "Segoe Print", cursive; color: #1a2f6b; }
+.pf-name { grid-area: name; } .pf-date { grid-area: date; } .pf-day { grid-area: day; } .pf-hours { grid-area: hours; }
+.pf-check { grid-area: check; } .pf-licence { grid-area: licence; } .pf-plate { grid-area: plate; } .pf-zone { grid-area: zone; }
+.ps-days { display: flex; gap: 0; margin-top: 1mm; }
+.ps-dayname { width: 4.6mm; text-align: center; font-size: 8pt; border-left: 0.2mm solid #999; }
+.ps-dayname:first-child { border-left: 0; }
+.ps-dayname.on { font-weight: 700; border: 0.35mm solid #000; border-radius: 50%; }
+.pb { display: flex; flex-wrap: wrap; gap: 0.8mm 3mm; }
+.pb-item { display: inline-flex; align-items: center; gap: 1.2mm; font-size: 7.5pt; }
+.pb-box { width: 3.6mm; height: 3.6mm; border: 0.3mm solid #000; background: #fff; display: inline-grid; place-items: center; font-size: 7pt; font-weight: 700; color: #1a2f6b; }
+.pb-hours { display: grid; grid-template-columns: auto auto; gap: 1mm 3mm; }
+.pb-hours .pb-item:last-child { grid-column: 1 / -1; }
+.pb-cells { gap: 0; border: 0.25mm solid #777; background: #fff; width: max-content; }
+.pb-cells .pb-item { flex-direction: column-reverse; gap: 0; padding: 0.4mm 1.4mm; border-left: 0.2mm solid #999; font-size: 7pt; }
+.pb-cells .pb-item:first-child { border-left: 0; }
+.pb-cells .pb-box { border: 0; width: auto; height: 2.8mm; font-size: 7pt; }
+.pb-cells .pb-item.on { font-weight: 700; background: #dfe6f5; }
+.pb-small .pb-item { font-size: 6.5pt; }
+
+.ps-acts { position: relative; display: grid; grid-template-columns: 6mm 1fr; border: 0.3mm solid #000; flex: 1; min-height: 0; }
+.ps-side { background: var(--ps-grey); color: #fff; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: 700; letter-spacing: 0.08em; font-size: 7pt; }
+.ps-rows {
+  display: grid; grid-template-columns: 24mm 1fr 25mm;
+  grid-template-rows: 15mm 15mm 1fr 5.5mm 5mm 12mm 12mm 5mm;
+  min-height: 0;
+}
+.ps-label { border-right: 0.3mm solid #000; border-bottom: 0.2mm solid #000; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0.5mm 1mm; font-size: 6.5pt; }
+.ps-label strong { font-weight: 700; font-size: 6.8pt; }
+.ps-label small { font-size: 5.5pt; color: #333; }
+.ps-blank { border-bottom: 0; }
+.ps-comments { grid-column: 2 / 4; border-bottom: 0.2mm solid #000; padding: 1mm 2mm; font-family: "Bradley Hand", "Segoe Print", cursive; color: #1a2f6b; font-size: 9pt; }
+.ps-hours { display: grid; grid-template-columns: repeat(24, 1fr); border-bottom: 0.2mm solid #000; }
+.ps-col { border-left: 0.2mm solid #000; padding: 0.5mm; display: flex; flex-direction: column; gap: 0.5mm; overflow: hidden; font-family: "Bradley Hand", "Segoe Print", cursive; color: #1a2f6b; }
+.ps-col:first-child { border-left: 0; }
+.ps-odo .ps-col { font-size: 6.5pt; }
+.ps-place .ps-col { flex-direction: row; justify-content: center; }
+.ps-place .ps-col span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 6.5pt; white-space: nowrap; }
+.ps-calc { grid-column: 3; grid-row: 2 / 5; border-left: 0.3mm solid #000; padding: 1mm 1.5mm; font-size: 6pt; color: #333; }
+.ps-calc-small { grid-row: auto; border-left: 0.3mm solid #000; text-align: right; font-size: 5.5pt; align-self: stretch; }
+.ps-svg { width: 100%; height: 100%; display: block; }
+.ps-pair { border-bottom: 0.2mm solid #000; }
+.ps-axis { position: relative; border-left: 0; }
+.ps-axis span { position: absolute; top: 0.3mm; transform: translateX(-50%); font-size: 8pt; }
+.ps-axis span.ps-axis-word { font-size: 5.5pt; top: 1.3mm; }
+.ps-axis span:first-child { transform: none; }
+.ps-axis span:last-child { transform: translateX(-100%); }
+.ps-graph-wrap { grid-row: span 2; border-top: 0.2mm solid #000; border-bottom: 0.2mm solid #000; }
+.ps-total { border-left: 0.3mm solid #000; border-top: 0.2mm solid #000; padding: 0.8mm 1.5mm; align-items: flex-end; }
+.ps-total .pf-value { min-height: 0; border: 0; padding: 0; font-size: 11pt; background: none; }
+.g-hour { stroke: #000; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.g-tick { stroke: #000; stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+.g-night { fill: #e4e4e4; }
+.g-pen { stroke: #1a2f6b; stroke-width: 2.2; fill: none; vector-effect: non-scaling-stroke; stroke-linecap: square; }
+.g-line { stroke-linejoin: miter; }
+.ps-warning {
+  position: absolute; left: 18%; top: 34%; transform: rotate(-10deg); font-size: 16pt; font-weight: 700;
+  color: rgba(0, 0, 0, 0.08); white-space: nowrap; pointer-events: none;
+}
+.ps-bottom { display: grid; grid-template-columns: 95mm 1fr; gap: 6mm; height: 34mm; }
+.ps-sign { display: flex; flex-direction: column; gap: 0.8mm; justify-content: flex-end; }
+.ps-small { font-size: 6pt; }
+.ps-signbox { border: 0.3mm solid #000; height: 13mm; }
+.ps-must { font-weight: 700; font-size: 6.5pt; }
+.ps-pairid { background: var(--ps-light); display: flex; flex-direction: column; }
+.ps-pairgrid { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 1.2mm 3mm; padding: 1.5mm 2.5mm; }
+.ps-pairgrid .pb-cells .pb-item { padding: 0.4mm 1mm; font-size: 6.2pt; }

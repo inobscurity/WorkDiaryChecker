@@ -24,6 +24,11 @@ breaks and 24-hour rests you took in the days before, so the 7, 14 and 28-day re
 checked too. **Show the day before** adds an optional sheet for the day before the first one, for
 when work ran overnight into it: every rule is then checked across that midnight.
 
+Each sheet has a **TWO-UP** line for two-up driving, the time zone and driver hours option tick
+boxes, the time of the daily check and the two-up driver's identification, as on a diary daily
+sheet. **Print** gives one landscape A4 page per sheet laid out like a National Driver Work Diary
+daily sheet, after a page with the breaches found.
+
 It runs in any modern browser, on a phone, tablet or computer. Entries stay on the device; nothing
 is sent anywhere.
 

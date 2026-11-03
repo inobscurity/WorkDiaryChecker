@@ -84,7 +84,7 @@
     },
     'standard-bus': {
       name: 'Standard Hours — solo bus driver',
-      option: 'standard',
+      option: 'standard-bus',
       source: 'Heavy Vehicle (Fatigue Management) National Regulation, Schedule 1, Table 2',
       rules: [
         ...SHORT_PERIODS('bus', 'Sch 1 Table 2'),
@@ -105,6 +105,14 @@
         { id: 'std2-7d', period: DAYS(7), relevantRest: H(24), maxWork: H(60), workRisk: RISK_WEEKS, restBlocks: { length: H(24), count: 1 }, restInBlocks: { block: H(7), total: H(24) }, restText: '24 continuous hours stationary rest, and another 24 hours stationary rest in blocks of at least 7 continuous hours' },
         { id: 'std2-14d', period: DAYS(14), relevantNight: true, maxWork: H(120), workRisk: RISK_WEEKS, nightRests: { count: 4, consecutive: true }, restText: '2 night rest breaks, and 2 night rest breaks taken on consecutive days' },
       ],
+    },
+    // A two-up bus driver works to the two-up table (Table 3); the sheet ticks Standard Bus.
+    'standard-bus-two-up': {
+      name: 'Standard Hours — two-up bus driver',
+      option: 'standard-bus',
+      source: 'Heavy Vehicle (Fatigue Management) National Regulation, Schedule 1, Table 3 (two-up drivers, including buses)',
+      twoUp: true,
+      rules: null,
     },
     'bfm-solo': {
       name: 'BFM — solo driver',
@@ -135,6 +143,8 @@
       ],
     },
   };
+
+  RULESETS['standard-bus-two-up'].rules = RULESETS['standard-two-up'].rules;
 
   function formatDuration(slots) {
     const minutes = slots * SLOT_MINUTES;
