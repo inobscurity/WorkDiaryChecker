@@ -418,18 +418,22 @@
       el('div', 'ps-comments', pg.comments || ''));
     const odo = el('div', 'ps-hours ps-odo');
     const place = el('div', 'ps-hours ps-place');
-    const odoCols = [];
-    const placeCols = [];
     for (let h = 0; h < 24; h++) {
-      odoCols.push(odo.appendChild(el('div', 'ps-col')));
-      placeCols.push(place.appendChild(el('div', 'ps-col')));
+      odo.append(el('div', 'ps-col'));
+      place.append(el('div', 'ps-col'));
     }
+    // Each place name prints upright on the line of its work/rest change, with the odometer
+    // reading on the same line above it.
+    const mark = (row, text, q) => {
+      const m = el('span', 'ps-mark', text);
+      m.style.left = `${(q / SLOTS_PER_DAY) * 100}%`;
+      row.append(m);
+    };
     for (let q = 0; q < SLOTS_PER_DAY; q++) {
       const c = state.changes[base + q];
       if (!c) continue;
-      const h = Math.floor(q / 4);
-      if (c.odometer) odoCols[h].append(el('span', null, c.odometer));
-      if (c.location) placeCols[h].append(el('span', null, `${clock(base + q)} ${c.location}`));
+      if (c.odometer) mark(odo, c.odometer, q);
+      if (c.location) mark(place, c.location, q);
     }
     rows.append(label('ODOMETER READING'), odo, el('div', 'ps-calc ps-calc-top', 'Space to calculate work and rest hours (optional)'));
     rows.append(label('NAME OF PLACE AT WORK AND REST CHANGE', '(e.g. rest area, truck stop, suburb or town)'), place);
