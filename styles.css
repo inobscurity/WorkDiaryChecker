@@ -474,6 +474,7 @@ body.detail-open { padding-bottom: 260px; }
 .g-night { fill: #e4e4e4; }
 .g-pen { stroke: #1a2f6b; stroke-width: 2.2; fill: none; vector-effect: non-scaling-stroke; stroke-linecap: square; }
 .g-line { stroke-linejoin: miter; }
+.g-breach { stroke: #c4161c; }
 .ps-bottom { display: grid; grid-template-columns: 95mm 1fr; gap: 6mm; height: 34mm; }
 .ps-sign { display: flex; flex-direction: column; gap: 0.8mm; justify-content: flex-end; }
 .ps-small { font-size: 6pt; }

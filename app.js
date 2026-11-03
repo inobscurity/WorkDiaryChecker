@@ -481,6 +481,15 @@
     }
     d += ` L960 ${prevY}`;
     graph.append(svgEl('path', { d, class: 'g-pen g-line' }));
+    // Work that breaks a limit in red, as on screen, including the stroke up into it and down
+    // out of it.
+    for (let q = 0; q < SLOTS_PER_DAY; q++) {
+      const i = base + q;
+      if (state.slots[i] !== 'W' || !breachAt.has(i)) continue;
+      graph.append(svgEl('line', { x1: q * 10, y1: 25, x2: q * 10 + 10, y2: 25, class: 'g-pen g-breach' }));
+      if (q > 0 && state.slots[i - 1] !== 'W') graph.append(svgEl('line', { x1: q * 10, y1: 25, x2: q * 10, y2: 75, class: 'g-pen g-breach' }));
+      if (q < SLOTS_PER_DAY - 1 && state.slots[i + 1] !== 'W') graph.append(svgEl('line', { x1: q * 10 + 10, y1: 25, x2: q * 10 + 10, y2: 75, class: 'g-pen g-breach' }));
+    }
     const graphWrap = el('div', 'ps-graph-wrap');
     graphWrap.append(graph);
     rows.append(label('MY WORK'), graphWrap, printField('Total Work:', formatHours(work), 'ps-total'));
