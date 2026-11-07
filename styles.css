@@ -83,6 +83,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .earlier-field.invalid input { border-color: var(--red); outline: 1px solid var(--red); }
 .earlier-error { font-size: 0.8rem; color: var(--red); }
 
+.rounding-note { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; background: #fff6d6; border: 1px solid #ecd27a; font-size: 0.88rem; max-width: 80ch; }
 .prior-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 4px; }
 .prior-sheets { display: inline-flex; border: 1px solid var(--diary); border-radius: 6px; overflow: hidden; }
 .prior-choice {

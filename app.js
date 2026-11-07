@@ -372,7 +372,7 @@
       check: (t) => (t.length <= 200 ? '' : `Keep comments to 200 characters (now ${t.length}).`),
     },
     hoursSince: {
-      check: (t) => (/^\d+$/.test(t) && Number(t) <= 28 * 24 ? '' : 'Enter whole hours, like 40.'),
+      check: (t) => (QUARTER_HOURS.test(t) && Number(t) <= 28 * 24 ? '' : `${QUARTER_HELP}. Round up to the next quarter hour.`),
     },
   };
 
@@ -1457,11 +1457,15 @@
   // Hours as typed: "38", "38.5", "38,5" or "38:30". Work rounds up to the next 15 minutes, as in
   // a written work diary. Null for an empty box, NaN for something that isn't hours.
   // Whole hours only. Null for an empty box, NaN for anything else.
+  // Hours in quarter hours: whole hours, or ending in .25, .5, .50 or .75. Null for an empty box,
+  // NaN for anything else. Returned in 15-minute slots.
+  const QUARTER_HOURS = /^(?:\d+(?:\.(?:25|5|50|75))?|\.(?:25|5|50|75))$/;
+  const QUARTER_HELP = 'Enter hours in quarter hours, like 38, 38.25, 38.5 or 38.75';
   function parseHours(text, maxHours) {
     const t = String(text || '').trim();
     if (!t) return null;
-    if (!/^\d+$/.test(t) || Number(t) > maxHours) return NaN;
-    return Number(t) * (60 / SLOT_MINUTES);
+    if (!QUARTER_HOURS.test(t) || Number(t) > maxHours) return NaN;
+    return Math.round(Number(t) * (60 / SLOT_MINUTES));
   }
 
   // The rules of the current work option that take an earlier total.
@@ -1607,7 +1611,7 @@
       input.placeholder = 'e.g. 40';
       input.value = h.workSince || '';
       input.addEventListener('input', () => setHistory({ workSince: input.value }));
-      out.push(field(`Work since then, before ${SHEET_NAMES[firstCounted()]}`, 'For the 84 hours between 24-hour rests. Needs the date above.', input, el('span', null, 'hours')));
+      out.push(field(`Work since then, before ${SHEET_NAMES[firstCounted()]}`, 'For the 84 hours between 24-hour rests. Needs the date above. In quarter hours, rounded up.', input, el('span', null, 'hours')));
       attachCheck(input, 'hoursSince');
     }
     for (const rule of q.longRests) {
@@ -1725,7 +1729,7 @@
           update(true);
         });
         row.append(input, el('span', null, 'hours'));
-        const error = el('span', 'earlier-error', `Enter whole hours, like 38, up to ${days * 24}.`);
+        const error = el('span', 'earlier-error', `${QUARTER_HELP}, up to ${days * 24}. Round up to the next quarter hour.`);
         error.hidden = true;
         const warning = el('span', 'earlier-error earlier-warning');
         warning.hidden = true;
