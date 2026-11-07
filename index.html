@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Content Security Policy: the browser only runs scripts, styles and images from the app's
+       own files. Typed text is never page code, but even if a mistake let it become code, the
+       browser would refuse to run it, and nothing can be sent to another website. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>Work Diary Checker (test version)</title>
   <meta name="description" content="Check NHVL work diary entries against Standard Hours and BFM work and rest limits, in 15-minute blocks.">
   <meta name="theme-color" content="#0d6b67">
