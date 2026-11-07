@@ -314,8 +314,13 @@
   // capitals and no spaces for licence numbers, number plates and diary numbers, and 05:45 for a
   // time typed as 545.
 
-  // Work diary numbers. To be replaced with the Queensland format once an example is confirmed.
-  const DIARY_FORMAT = /^[A-Z0-9]{4,12}$/;
+  // Work diary numbers, like QCD 755011: letters and digits with at least one digit, one hyphen
+  // at most, spaces between groups, up to 20 characters in all. Older diaries differ, so the
+  // check is broad.
+  const diaryOk = (t) => t.length >= 4 && t.length <= 20 && /\d/.test(t) &&
+    /^[A-Z0-9]+(?:[ -][A-Z0-9]+)*$/.test(t) && (t.match(/-/g) || []).length <= 1;
+  const diaryTidy = (t) => t.trim().toUpperCase().replace(/\s+/g, ' ').replace(/ ?- ?/g, '-');
+  const DIARY_HELP = 'A work diary number is letters and digits (one hyphen or spaces are fine), up to 20 characters, like QCD 755011.';
   const squash = (t) => t.replace(/[\s-]/g, '').toUpperCase();
 
   const CHECKS = {
@@ -332,17 +337,19 @@
       check: (t) => (/^[A-Z0-9]{2,9}$/.test(t) ? '' : 'A number plate is 2 to 9 letters and digits.'),
     },
     diary: {
-      tidy: squash,
-      check: (t) => (DIARY_FORMAT.test(t) ? '' : 'A work diary number is 4 to 12 letters and digits.'),
+      tidy: diaryTidy,
+      check: (t) => (diaryOk(t) ? '' : DIARY_HELP),
     },
+    // The diary number, then the page number after a slash, a comma, "page" or "p".
     diaryPage: {
       tidy: (t) => {
-        const m = t.trim().toUpperCase().match(/^([A-Z0-9 -]+?)\s*(?:\/|,|\bP(?:AGE)?\b|\s)\s*(\d{1,3})$/);
-        return m ? `${squash(m[1])} / ${m[2]}` : t.trim();
+        const m = t.trim().toUpperCase().match(/^(.+?)\s*(?:\/|,|\bP(?:AGE)?\.?)\s*(\d{1,3})$/);
+        return m ? `${diaryTidy(m[1])} / ${m[2]}` : diaryTidy(t);
       },
       check: (t) => {
-        const m = t.match(/^([A-Z0-9]+) \/ (\d{1,3})$/);
-        return m && DIARY_FORMAT.test(m[1]) && Number(m[2]) > 0 ? '' : 'Enter the work diary number, then the page number, like 1234567 / 23.';
+        const m = t.match(/^(.+) \/ (\d{1,3})$/);
+        if (!m || Number(m[2]) < 1) return 'Enter the work diary number, then a slash and the page number, like QCD 755011 / 23.';
+        return diaryOk(m[1]) ? '' : DIARY_HELP;
       },
     },
     time: {
@@ -748,7 +755,7 @@
     box('Licence no.', licence);
     const rego = field('rego', 'e.g. XQ12AB', null, 'plate');
     box('Number plate', rego);
-    box('Work diary no.', field('diaryNo', 'Optional', null, 'diary'));
+    box('Work diary no.', field('diaryNo', 'e.g. QCD 755011', null, 'diary'));
     // The time zone is only recorded on the sheet; it doesn't change any times or checks. Picking
     // one fills it in on the other sheets that have none.
     box('Time zone: state/territory (driver base)', pick('zone', ZONES, (zone) => {
@@ -821,7 +828,7 @@
     pairBox("Two-up driver's name", field('twoUp', 'Optional', null, 'name'));
     pairBox("Two-up driver's licence no.", field('twoUpLicence', 'Optional', null, 'licence'));
     pairBox('Two-up driver hours option', pick('twoUpOption', TWO_UP_OPTIONS)).classList.add('meta-box-wide');
-    pairBox("Two-up driver's work diary & page no.", field('twoUpDiary', 'e.g. 1234567 / 23', null, 'diaryPage'));
+    pairBox("Two-up driver's work diary & page no.", field('twoUpDiary', 'e.g. QCD 755008 / 23', null, 'diaryPage'));
     pairBox("Two-up driver's licence issued", pick('twoUpIssued', ZONES)).classList.add('meta-box-wide');
     pair.append(pairGrid);
     sheet.append(pair);
