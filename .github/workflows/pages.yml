@@ -1,5 +1,9 @@
 name: Publish to GitHub Pages
 
+# Publishes the live app from main, and the test version from the experiments branch at /test/.
+# Only main may publish to GitHub Pages, so a push to experiments asks this workflow to run on
+# main (see test-version.yml), and every run builds both.
+
 on:
   push:
     branches: [main]
@@ -22,15 +26,34 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: live
+      - name: Check out the test version, if there is one
+        id: experiments
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: experiments
+          path: experiments
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Test the fatigue rules
+      - name: Test the fatigue rules (live)
+        working-directory: live
+        run: for f in test/*.test.js; do node "$f" || exit 1; done
+      - name: Test the fatigue rules (test version)
+        if: steps.experiments.outcome == 'success'
+        working-directory: experiments
         run: for f in test/*.test.js; do node "$f" || exit 1; done
       - name: Collect the app files
         run: |
+          files="index.html styles.css rules.js app.js sw.js manifest.webmanifest icons"
           mkdir _site
-          cp -r index.html styles.css rules.js app.js sw.js manifest.webmanifest icons _site/
+          (cd live && cp -r $files ../_site/)
+          if [ -d experiments ]; then
+            mkdir _site/test
+            (cd experiments && cp -r $files ../_site/test/)
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

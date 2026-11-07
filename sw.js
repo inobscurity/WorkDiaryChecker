@@ -1,5 +1,6 @@
 // Keeps the checker working offline.
-const CACHE = 'work-diary-checker-v24';
+const PREFIX = 'work-diary-checker-v';
+const CACHE = `${PREFIX}25`;
 const FILES = [
   './',
   'index.html',
@@ -21,7 +22,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // Only this version's old caches: the test version at /test/ shares the website.
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

@@ -1,0 +1,27 @@
+name: Test version
+
+# A push to the experiments branch runs its tests, then asks the publishing workflow to run on
+# main, which publishes both the live app and the test version.
+
+on:
+  push:
+    branches: [experiments]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test the fatigue rules
+        run: for f in test/*.test.js; do node "$f" || exit 1; done
+      - name: Publish the live app and the test version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
