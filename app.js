@@ -205,11 +205,15 @@
       update(true);
     });
 
-    for (const id of ['driver', 'licence']) {
+    for (const [id, kind] of [['driver', 'name'], ['licence', 'licence']]) {
       const input = $(`#${id}`);
       input.value = state[id];
       input.addEventListener('input', () => {
         state[id] = input.value;
+        update(true);
+      });
+      attachCheck(input, kind, (v) => {
+        state[id] = v;
         update(true);
       });
     }
@@ -225,6 +229,8 @@
       state.licence = '';
       $('#driver').value = '';
       $('#licence').value = '';
+      $('#driver').recheck();
+      $('#licence').recheck();
       state.slots = fresh.slots;
       state.changes = {};
       state.prior = {};
@@ -299,6 +305,141 @@
       button.classList.add('confirming');
       timer = setTimeout(reset, 4000);
     });
+  }
+
+  // ---- Checking what the driver types ----------------------------------------------------------
+  //
+  // Each check takes the text (tidied, if the check tidies) and returns '' when it's fine, or what
+  // to fix. An empty box is always fine. When the driver leaves a box, text that passes is tidied:
+  // capitals and no spaces for licence numbers, number plates and diary numbers, and 05:45 for a
+  // time typed as 545.
+
+  // Work diary numbers. To be replaced with the Queensland format once an example is confirmed.
+  const DIARY_FORMAT = /^[A-Z0-9]{4,12}$/;
+  const squash = (t) => t.replace(/[\s-]/g, '').toUpperCase();
+
+  const CHECKS = {
+    name: {
+      check: (t) => (/^\p{L}[\p{L} .'’-]{1,59}$/u.test(t) ? '' : 'Use letters only (spaces, hyphens and apostrophes are fine), 2 to 60 characters.'),
+    },
+    // Any state's format: from 4 to 10 letters and digits, with at least one digit.
+    licence: {
+      tidy: squash,
+      check: (t) => (/^(?=.*\d)[A-Z0-9]{4,10}$/.test(t) ? '' : 'An Australian licence number is 4 to 10 letters and digits, with at least one digit.'),
+    },
+    plate: {
+      tidy: squash,
+      check: (t) => (/^[A-Z0-9]{2,9}$/.test(t) ? '' : 'A number plate is 2 to 9 letters and digits.'),
+    },
+    diary: {
+      tidy: squash,
+      check: (t) => (DIARY_FORMAT.test(t) ? '' : 'A work diary number is 4 to 12 letters and digits.'),
+    },
+    diaryPage: {
+      tidy: (t) => {
+        const m = t.trim().toUpperCase().match(/^([A-Z0-9 -]+?)\s*(?:\/|,|\bP(?:AGE)?\b|\s)\s*(\d{1,3})$/);
+        return m ? `${squash(m[1])} / ${m[2]}` : t.trim();
+      },
+      check: (t) => {
+        const m = t.match(/^([A-Z0-9]+) \/ (\d{1,3})$/);
+        return m && DIARY_FORMAT.test(m[1]) && Number(m[2]) > 0 ? '' : 'Enter the work diary number, then the page number, like 1234567 / 23.';
+      },
+    },
+    time: {
+      tidy: (t) => {
+        const v = t.trim().replace('.', ':');
+        if (/^\d{3,4}$/.test(v)) return `${v.slice(0, -2).padStart(2, '0')}:${v.slice(-2)}`;
+        if (/^\d:\d\d$/.test(v)) return `0${v}`;
+        return v;
+      },
+      check: (t) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? '' : 'Enter a 24-hour time, like 05:45.'),
+    },
+    place: {
+      tidy: (t) => t.trim().replace(/\s+/g, ' '),
+      check: (t) => (/^[\p{L}\d][\p{L}\d .,'’()&\/#-]{1,59}$/u.test(t) ? '' : 'Use letters and numbers for the place, 2 to 60 characters.'),
+    },
+    odometer: {
+      tidy: (t) => t.replace(/[\s,]/g, ''),
+      check: (t) => (/^\d{1,7}$/.test(t) ? '' : 'Enter the odometer reading in whole kilometres, digits only.'),
+    },
+    comments: {
+      check: (t) => (t.length <= 200 ? '' : `Keep comments to 200 characters (now ${t.length}).`),
+    },
+    hoursSince: {
+      check: (t) => (/^\d+$/.test(t) && Number(t) <= 28 * 24 ? '' : 'Enter whole hours, like 40.'),
+    },
+  };
+
+  // Checks a box as the driver types, and shows what to fix under it. `keep` saves tidied text.
+  function attachCheck(input, kind, keep) {
+    const rule = CHECKS[kind];
+    const note = el('span', 'field-error');
+    note.hidden = true;
+    input.after(note);
+    input.dataset.check = kind;
+    const run = () => {
+      const raw = input.value;
+      const message = raw.trim() ? rule.check(rule.tidy ? rule.tidy(raw) : raw.trim()) : '';
+      input.classList.toggle('invalid', !!message);
+      input.setAttribute('aria-invalid', String(!!message));
+      note.textContent = message;
+      note.hidden = !message;
+      return !message;
+    };
+    input.addEventListener('input', run);
+    input.addEventListener('blur', () => {
+      if (!rule.tidy || !input.value.trim() || !run()) return;
+      const tidied = rule.tidy(input.value);
+      if (tidied !== input.value) {
+        input.value = tidied;
+        if (keep) keep(tidied);
+      }
+    });
+    input.recheck = run;
+    run();
+    return input;
+  }
+
+  // Odometer readings should go up through the sheets. A lower one is flagged as a warning
+  // (it may be a change of vehicle, which belongs in the comments).
+  function checkOdometerOrder() {
+    const inputs = [...document.querySelectorAll('#sheets .change-input[data-check="odometer"]')]
+      .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot));
+    let prev = null;
+    for (const input of inputs) {
+      const warn = input.parentElement.querySelector('.field-warning');
+      const value = input.value.trim();
+      let message = '';
+      if (value && !input.classList.contains('invalid')) {
+        const km = Number(CHECKS.odometer.tidy(value));
+        if (prev && km < prev.km) message = `Lower than the reading at ${fmtTime(prev.slot)} (${prev.km}). Check it, or note a change of vehicle in the comments.`;
+        prev = { km, slot: Number(input.dataset.slot) };
+      }
+      warn.textContent = message;
+      warn.hidden = !message;
+    }
+  }
+
+  // A line at the top of the summary when boxes need fixing.
+  function showInputIssues() {
+    const box = $('#summary');
+    let line = $('#input-issues');
+    const count = invalidCount();
+    if (!count) {
+      if (line) line.remove();
+      return;
+    }
+    if (!line) {
+      line = el('p', 'input-issues');
+      line.id = 'input-issues';
+    }
+    line.textContent = `${count} ${count === 1 ? 'entry needs' : 'entries need'} fixing: ${count === 1 ? "it's" : "they're"} marked in red.`;
+    box.prepend(line);
+  }
+
+  // How many boxes need fixing, across the page.
+  function invalidCount() {
+    return document.querySelectorAll('input.invalid, .earlier-field.invalid').length;
   }
 
   // A row of tick boxes like those on a diary sheet. With onPick the boxes can be tapped; without
@@ -553,7 +694,7 @@
     };
     // Fields kept for this sheet, shown from the state on every full render.
     const syncers = [];
-    const field = (key, placeholder, inputMode) => {
+    const field = (key, placeholder, inputMode, kind) => {
       const input = el('input', 'meta-input');
       input.placeholder = placeholder || '';
       if (inputMode) input.inputMode = inputMode;
@@ -562,8 +703,11 @@
         state.pages[p][key] = input.value;
         save();
       });
+      // The check is attached once the box is on the page, so its note sits under it.
+      if (kind) queueMicrotask(() => attachCheck(input, kind, (v) => { state.pages[p][key] = v; save(); }));
       syncers.push(() => {
         if (document.activeElement !== input) input.value = state.pages[p][key] || '';
+        if (input.recheck) input.recheck();
       });
       return input;
     };
@@ -602,16 +746,16 @@
     }
     box("Driver's name", driver);
     box('Licence no.', licence);
-    const rego = field('rego', 'e.g. XQ12AB');
+    const rego = field('rego', 'e.g. XQ12AB', null, 'plate');
     box('Number plate', rego);
-    box('Work diary no.', field('diaryNo', 'Optional'));
+    box('Work diary no.', field('diaryNo', 'Optional', null, 'diary'));
     // The time zone is only recorded on the sheet; it doesn't change any times or checks. Picking
     // one fills it in on the other sheets that have none.
     box('Time zone: state/territory (driver base)', pick('zone', ZONES, (zone) => {
       if (zone) state.pages.forEach((pg) => { if (!pg.zone) pg.zone = zone; });
     })).classList.add('meta-box-wide');
     box('Driver hours option', options).classList.add('meta-box-wide');
-    box('Time of daily check (if required)', field('checkTime', 'e.g. 05:45', 'numeric'));
+    box('Time of daily check (if required)', field('checkTime', 'e.g. 05:45', 'numeric', 'time'));
     sheet.append(meta);
 
     // The 24-hour graph: hour numbers, a WORK line, a REST line and a line for breaches.
@@ -660,7 +804,7 @@
 
     const notes = el('div', 'sheet-notes');
     const comments = el('label', 'notes-field');
-    comments.append(el('span', 'meta-label', 'Number plate change and comments (optional)'), field('comments', 'e.g. delays, authorised officer notes'));
+    comments.append(el('span', 'meta-label', 'Number plate change and comments (optional)'), field('comments', 'e.g. delays, authorised officer notes', null, 'comments'));
     notes.append(comments);
     sheet.append(notes);
 
@@ -674,10 +818,10 @@
       pairGrid.append(b);
       return b;
     };
-    pairBox("Two-up driver's name", field('twoUp', 'Optional'));
-    pairBox("Two-up driver's licence no.", field('twoUpLicence', 'Optional'));
+    pairBox("Two-up driver's name", field('twoUp', 'Optional', null, 'name'));
+    pairBox("Two-up driver's licence no.", field('twoUpLicence', 'Optional', null, 'licence'));
     pairBox('Two-up driver hours option', pick('twoUpOption', TWO_UP_OPTIONS)).classList.add('meta-box-wide');
-    pairBox("Two-up driver's work diary & page no.", field('twoUpDiary', 'Optional'));
+    pairBox("Two-up driver's work diary & page no.", field('twoUpDiary', 'e.g. 1234567 / 23', null, 'diaryPage'));
     pairBox("Two-up driver's licence issued", pick('twoUpIssued', ZONES)).classList.add('meta-box-wide');
     pair.append(pairGrid);
     sheet.append(pair);
@@ -916,6 +1060,9 @@
       renderLimits(ruleset);
       renderPlanner();
       buildPrintSheets();
+      checkOdometerOrder();
+      // Checks on boxes added in this render are attached just after it, so count then.
+      queueMicrotask(showInputIssues);
     }
     markNow();
     applySelection();
@@ -1204,11 +1351,20 @@
         input.value = (state.changes[i] && state.changes[i][field]) || '';
         input.setAttribute('aria-label', `${field} at ${clock(i)}`);
         if (field === 'odometer') input.inputMode = 'numeric';
-        input.addEventListener('input', () => {
-          state.changes[i] = { ...state.changes[i], [field]: input.value };
+        input.dataset.slot = i;
+        const keep = (v) => {
+          state.changes[i] = { ...state.changes[i], [field]: v };
           save();
-        });
+          if (field === 'odometer') checkOdometerOrder();
+        };
+        input.addEventListener('input', () => keep(input.value));
         td.append(input);
+        attachCheck(input, field === 'odometer' ? 'odometer' : 'place', keep);
+        if (field === 'odometer') {
+          const warn = el('span', 'field-warning');
+          warn.hidden = true;
+          td.append(warn);
+        }
         tr.append(td);
       }
       return tr;
@@ -1294,16 +1450,12 @@
 
   // Hours as typed: "38", "38.5", "38,5" or "38:30". Work rounds up to the next 15 minutes, as in
   // a written work diary. Null for an empty box, NaN for something that isn't hours.
+  // Whole hours only. Null for an empty box, NaN for anything else.
   function parseHours(text, maxHours) {
     const t = String(text || '').trim();
     if (!t) return null;
-    let hours = NaN;
-    let m = t.match(/^(\d+)(?:[.,](\d+))?$/);
-    if (m) hours = Number(`${m[1]}.${m[2] || 0}`);
-    m = t.match(/^(\d+):([0-5]\d)$/);
-    if (m) hours = Number(m[1]) + Number(m[2]) / 60;
-    if (!(hours >= 0) || hours > maxHours) return NaN;
-    return Math.ceil(hours * (60 / SLOT_MINUTES) - 1e-9);
+    if (!/^\d+$/.test(t) || Number(t) > maxHours) return NaN;
+    return Number(t) * (60 / SLOT_MINUTES);
   }
 
   // The rules of the current work option that take an earlier total.
@@ -1444,12 +1596,13 @@
     if (q.workSince) {
       const input = el('input');
       input.id = 'rest-work-since';
-      input.inputMode = 'decimal';
+      input.inputMode = 'numeric';
       input.autocomplete = 'off';
       input.placeholder = 'e.g. 40';
       input.value = h.workSince || '';
       input.addEventListener('input', () => setHistory({ workSince: input.value }));
       out.push(field(`Work since then, before ${SHEET_NAMES[firstCounted()]}`, 'For the 84 hours between 24-hour rests. Needs the date above.', input, el('span', null, 'hours')));
+      attachCheck(input, 'hoursSince');
     }
     for (const rule of q.longRests) {
       const days = q.days(rule);
@@ -1557,16 +1710,16 @@
         const row = el('span', 'earlier-input');
         const input = el('input');
         input.id = id;
-        input.inputMode = 'decimal';
+        input.inputMode = 'numeric';
         input.autocomplete = 'off';
-        input.placeholder = 'e.g. 38.5';
+        input.placeholder = 'e.g. 38';
         input.value = state.prior[key] || '';
         input.addEventListener('input', () => {
           state.prior = { ...state.prior, [key]: input.value };
           update(true);
         });
         row.append(input, el('span', null, 'hours'));
-        const error = el('span', 'earlier-error', `Enter hours, like 38.5 or 38:30, up to ${days * 24}.`);
+        const error = el('span', 'earlier-error', `Enter whole hours, like 38, up to ${days * 24}.`);
         error.hidden = true;
         const warning = el('span', 'earlier-error earlier-warning');
         warning.hidden = true;
