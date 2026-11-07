@@ -1,6 +1,6 @@
 {
-  "name": "Work Diary Checker",
-  "short_name": "Diary Check",
+  "name": "Work Diary Checker (test)",
+  "short_name": "Diary TEST",
   "description": "Check work diary entries against NHVR fatigue work and rest limits.",
   "start_url": "./",
   "scope": "./",

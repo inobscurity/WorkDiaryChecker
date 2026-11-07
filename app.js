@@ -39,7 +39,8 @@
     const names = SHEET_NAMES.slice(firstCounted(), firstCounted() + priorSheets());
     return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   }
-  const STORAGE_KEY = 'ewd-checker-v1';
+  // The test version keeps its own entries, so trying ideas can't change the live app's.
+  const STORAGE_KEY = 'ewd-checker-test-v1';
   const HOUR_LABELS = ['Mid', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
     'Noon', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
   // The boxes on a diary daily sheet.

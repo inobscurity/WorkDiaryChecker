@@ -44,6 +44,16 @@ body {
 
 button, input, select { font: inherit; color: inherit; }
 
+/* ---- Test version banner ---- */
+
+.test-banner {
+  background: #ffd23f; color: #1d2a33; text-align: center; font-size: 0.9rem;
+  padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 2px solid #c79a00;
+}
+.test-banner a { color: inherit; font-weight: 700; }
+@media print { .test-banner { display: none; } }
+
 /* ---- Controls ---- */
 
 .controls {
