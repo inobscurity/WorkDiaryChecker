@@ -410,22 +410,18 @@ body.detail-open { padding-bottom: 260px; }
   .print-sheets { display: block; }
 }
 
-/* The printed breach list, first page. */
-.pr { font: 9pt/1.35 Arial, Helvetica, sans-serif; color: #000; }
-.pr-title { font-size: 15pt; margin: 0 0 3mm; }
-.pr-facts { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 1mm 10mm; margin: 0 0 4mm; }
-.pr-facts div { display: flex; gap: 2mm; }
-.pr-facts dt { font-weight: 700; }
-.pr-facts dd { margin: 0; }
-.pr-count, .pr-none { margin: 0 0 2mm; font-weight: 700; }
-.pr-table { width: 100%; border-collapse: collapse; }
-.pr-table th, .pr-table td { border: 0.25mm solid #999; padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
-.pr-table th { background: #e6e6e6; font-size: 8pt; }
-.pr-table tr { break-inside: avoid; }
-.pr-n { width: 6mm; text-align: right; }
-.pr-date, .pr-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pr-table .pr-risk { white-space: nowrap; font-weight: 700; text-transform: capitalize; background: none; color: #000; border-radius: 0; }
-.pr-table .pr-risk.sev-critical, .pr-table .pr-risk.sev-severe { color: #c4161c; }
+/* The printed breach list, first page: the rounded red box and risk badges used on screen. */
+.pr { font: 10pt/1.4 Arial, Helvetica, sans-serif; color: #000; }
+.pr-box { padding: 4mm 5mm; border-radius: 3mm; border: 0.3mm solid var(--red); border-left-width: 2mm; background: var(--red-light); }
+.pr-box.good { border-color: var(--green); background: var(--green-light); }
+.pr-title { margin: 0; font-weight: 700; font-size: 12pt; color: var(--red); }
+.pr-box.good .pr-title { color: var(--green); }
+.pr-facts { margin: 1.5mm 0 0; color: #333; font-size: 8.5pt; white-space: pre-wrap; }
+.pr-list { list-style: none; margin: 3mm 0 0; padding: 0; }
+.pr-item { margin: 0 0 1.6mm; color: var(--red); break-inside: avoid; }
+.pr-item strong { color: var(--red); }
+.pr-item .severity { margin-right: 2mm; min-width: 31mm; text-align: center; }
+.pr-when { display: inline-block; min-width: 31mm; margin-right: 2mm; font-weight: 700; color: #000; font-variant-numeric: tabular-nums; }
 .pr-note { margin: 3mm 0 0; font-size: 7.5pt; color: #333; }
 
 .ps {
