@@ -673,11 +673,61 @@
     return ps;
   }
 
+  // The first printed page: every breach with its date and time, in the order they happened.
+  // The time is when the limit was first broken (the first block marked red). A breach that
+  // comes only from the totals entered for before the sheets has no time on the sheets, so it
+  // is listed first, with its period.
+  function printBreaches(pages) {
+    const page = el('section', 'pr');
+    const ruleset = RULESETS[state.ruleset];
+    page.append(el('h1', 'pr-title', 'Breaches found'));
+    const facts = el('dl', 'pr-facts');
+    const fact = (label, value) => {
+      const row = el('div');
+      row.append(el('dt', null, label), el('dd', null, value || '—'));
+      facts.append(row);
+    };
+    fact('Driver', state.driver);
+    fact('Licence no.', state.licence);
+    fact('Work option', ruleset.name);
+    fact('Sheets', `${formatDate(pageDate(pages[0]), true)} to ${formatDate(pageDate(pages[pages.length - 1]), true)}`);
+    fact('Printed', new Date().toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' }));
+    page.append(facts);
+
+    const list = result.breaches
+      .map((b) => ({ b, at: b.slots.length ? Math.min(...b.slots) : null }))
+      .sort((x, y) => (x.at == null ? -Infinity : x.at) - (y.at == null ? -Infinity : y.at) || (x.b.start || 0) - (y.b.start || 0));
+    if (!list.length) {
+      page.append(el('p', 'pr-none', `No breaches found under ${ruleset.name}.`));
+      return page;
+    }
+    page.append(el('p', 'pr-count', `${list.length} breach${list.length === 1 ? '' : 'es'}, in the order they happened.`));
+    const table = el('table', 'pr-table');
+    const head = el('tr');
+    for (const h of ['#', 'Date', 'Time', 'Rule', 'Risk category', 'What happened']) head.append(el('th', null, h));
+    const thead = el('thead');
+    thead.append(head);
+    const tbody = el('tbody');
+    list.forEach(({ b, at }, k) => {
+      const tr = el('tr');
+      const [from, to] = breachWindow(b);
+      const date = at == null ? 'Before the sheets' : formatDate(pageDate(Math.floor(at / SLOTS_PER_DAY)));
+      const time = at == null ? `${fmtTime(from)} to ${fmtTime(to)}` : clock(at);
+      tr.append(el('td', 'pr-n', String(k + 1)), el('td', 'pr-date', date), el('td', 'pr-time', time),
+        el('td', null, b.ruleLabel), el('td', `pr-risk${b.severity ? ` sev-${b.severity}` : ''}`, severityLabel(b)), el('td', null, b.message));
+      tbody.append(tr);
+    });
+    table.append(thead, tbody);
+    page.append(table);
+    page.append(el('p', 'pr-note', 'Times are when each limit was first broken, as marked in red on the sheets that follow. This is a guide only; check the current requirements with the NHVR.'));
+    return page;
+  }
+
   function buildPrintSheets() {
     const wrap = $('#print-sheets');
     if (!wrap) return;
     const pages = state.showDayBefore ? [0, ...SHEETS] : SHEETS;
-    wrap.replaceChildren(...pages.map(printSheet));
+    wrap.replaceChildren(printBreaches(pages), ...pages.map(printSheet));
   }
 
   function buildSheet(p) {

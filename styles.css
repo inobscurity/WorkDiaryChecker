@@ -414,11 +414,29 @@ body.detail-open { padding-bottom: 260px; }
   body { background: #fff; color: #000; }
   /* The breach summary prints first, then one diary-style page per sheet. */
   .app-header, .controls, .hint, .buttons, .limits, .planner, .breach-detail, .earlier,
-  #sheets, .footer { display: none !important; }
+  #sheets, .footer, .summary { display: none !important; }
   .wrap { max-width: none; padding: 0; }
   .summary { break-inside: avoid; }
   .print-sheets { display: block; }
 }
+
+/* The printed breach list, first page. */
+.pr { font: 9pt/1.35 Arial, Helvetica, sans-serif; color: #000; }
+.pr-title { font-size: 15pt; margin: 0 0 3mm; }
+.pr-facts { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 1mm 10mm; margin: 0 0 4mm; }
+.pr-facts div { display: flex; gap: 2mm; }
+.pr-facts dt { font-weight: 700; }
+.pr-facts dd { margin: 0; }
+.pr-count, .pr-none { margin: 0 0 2mm; font-weight: 700; }
+.pr-table { width: 100%; border-collapse: collapse; }
+.pr-table th, .pr-table td { border: 0.25mm solid #999; padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
+.pr-table th { background: #e6e6e6; font-size: 8pt; }
+.pr-table tr { break-inside: avoid; }
+.pr-n { width: 6mm; text-align: right; }
+.pr-date, .pr-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pr-table .pr-risk { white-space: nowrap; font-weight: 700; text-transform: capitalize; background: none; color: #000; border-radius: 0; }
+.pr-table .pr-risk.sev-critical, .pr-table .pr-risk.sev-severe { color: #c4161c; }
+.pr-note { margin: 3mm 0 0; font-size: 7.5pt; color: #333; }
 
 .ps {
   width: 281mm; height: 193mm; break-before: page; break-inside: avoid; position: relative; overflow: hidden;
