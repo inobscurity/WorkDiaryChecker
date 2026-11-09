@@ -404,11 +404,25 @@ body.detail-open { padding-bottom: 260px; }
   body { background: #fff; color: #000; }
   /* The breach summary prints first, then one diary-style page per sheet. */
   .app-header, .controls, .hint, .buttons, .limits, .planner, .breach-detail, .earlier,
-  #sheets, .footer { display: none !important; }
+  #sheets, .footer, .summary { display: none !important; }
   .wrap { max-width: none; padding: 0; }
   .summary { break-inside: avoid; }
   .print-sheets { display: block; }
 }
+
+/* The printed breach list, first page: the rounded red box and risk badges used on screen. */
+.pr { font: 10pt/1.4 Arial, Helvetica, sans-serif; color: #000; }
+.pr-box { padding: 4mm 5mm; border-radius: 3mm; border: 0.3mm solid var(--red); border-left-width: 2mm; background: var(--red-light); }
+.pr-box.good { border-color: var(--green); background: var(--green-light); }
+.pr-title { margin: 0; font-weight: 700; font-size: 12pt; color: var(--red); }
+.pr-box.good .pr-title { color: var(--green); }
+.pr-facts { margin: 1.5mm 0 0; color: #333; font-size: 8.5pt; white-space: pre-wrap; }
+.pr-list { list-style: none; margin: 3mm 0 0; padding: 0; }
+.pr-item { margin: 0 0 1.6mm; color: var(--red); break-inside: avoid; }
+.pr-item strong { color: var(--red); }
+.pr-item .severity { margin-right: 2mm; min-width: 31mm; text-align: center; }
+.pr-when { display: inline-block; min-width: 31mm; margin-right: 2mm; font-weight: 700; color: #000; font-variant-numeric: tabular-nums; }
+.pr-note { margin: 3mm 0 0; font-size: 7.5pt; color: #333; }
 
 .ps {
   width: 281mm; height: 193mm; break-before: page; break-inside: avoid; position: relative; overflow: hidden;

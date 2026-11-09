@@ -672,11 +672,52 @@
     return ps;
   }
 
+  // The first printed page: every breach with its date and time, in the order they happened,
+  // in the rounded red box with coloured risk badges used on screen. The time is when the
+  // limit was first broken (the first block marked red). A breach that comes only from the
+  // totals entered for before the sheets has no time on the sheets, so it is listed first, with
+  // its period.
+  function printBreaches(pages) {
+    const page = el('section', 'pr');
+    const ruleset = RULESETS[state.ruleset];
+    const list = result.breaches
+      .map((b) => ({ b, at: b.slots.length ? Math.min(...b.slots) : null }))
+      .sort((x, y) => (x.at == null ? -Infinity : x.at) - (y.at == null ? -Infinity : y.at) || (x.b.start || 0) - (y.b.start || 0));
+    const box = el('div', `pr-box ${list.length ? 'bad' : 'good'}`);
+    box.append(el('p', 'pr-title', list.length
+      ? `${list.length} breach${list.length === 1 ? '' : 'es'} found under ${ruleset.name}, in the order they happened`
+      : `No breaches found under ${ruleset.name}`));
+    const facts = [
+      `Driver: ${state.driver || '—'}`,
+      `Licence no.: ${state.licence || '—'}`,
+      `Sheets: ${formatDate(pageDate(pages[0]))} to ${formatDate(pageDate(pages[pages.length - 1]))}`,
+      `Printed: ${new Date().toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}`,
+    ];
+    box.append(el('p', 'pr-facts', facts.join('   ·   ')));
+    if (list.length) {
+      const ul = el('ul', 'pr-list');
+      for (const { b, at } of list) {
+        const [from, to] = breachWindow(b);
+        const when = at == null
+          ? `Before the sheets (${fmtTime(from)} to ${fmtTime(to)})`
+          : `${formatDate(pageDate(Math.floor(at / SLOTS_PER_DAY)))} ${clock(at)}`;
+        const li = el('li', 'pr-item');
+        li.append(el('span', `severity${b.severity ? ` sev-${b.severity}` : ''}`, severityLabel(b)),
+          el('span', 'pr-when', when), el('strong', null, `${b.ruleLabel}: `), document.createTextNode(b.message));
+        ul.append(li);
+      }
+      box.append(ul);
+    }
+    page.append(box);
+    page.append(el('p', 'pr-note', 'Each time is when the limit was first broken, as marked in red on the sheets that follow. This is a guide only; check the current requirements with the NHVR.'));
+    return page;
+  }
+
   function buildPrintSheets() {
     const wrap = $('#print-sheets');
     if (!wrap) return;
     const pages = state.showDayBefore ? [0, ...SHEETS] : SHEETS;
-    wrap.replaceChildren(...pages.map(printSheet));
+    wrap.replaceChildren(printBreaches(pages), ...pages.map(printSheet));
   }
 
   function buildSheet(p) {
