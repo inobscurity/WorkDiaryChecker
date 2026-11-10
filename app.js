@@ -11,7 +11,6 @@
   const MAX_EXTRA = 4;
   const PAGES = 1 + MAIN_SHEETS + MAX_EXTRA;
   const FIRST = 1;
-  const MIDDLE = 2;
   const N = PAGES * SLOTS_PER_DAY;
 
   function extraSheets() {
@@ -34,10 +33,10 @@
     return state.slots.slice(0, recordEnd());
   }
   // The earlier-work totals cover the days before the sheets. With the first 1, 2 or 3 sheets
-  // on the page (the driver's choice, 2 by default) they make up the 7, 14 or 28 days. The day
+  // on the page (the driver's choice, 1 by default) they make up the 7, 14 or 28 days. The day
   // before counts as the first sheet when it is shown.
   function priorSheets() {
-    return [1, 2, 3].includes(state.priorSheets) ? state.priorSheets : 2;
+    return [1, 2, 3].includes(state.priorSheets) ? state.priorSheets : 1;
   }
 
   // The page of the first sheet counted: the day before when shown, otherwise the first sheet.
@@ -97,15 +96,15 @@
     return isoDate(new Date(y, m - 1, d + n));
   }
 
-  // The middle sheet is today unless the driver picks another date, so the first is yesterday.
-  function yesterdayISO() {
-    return addDays(isoDate(new Date()), -1);
+  // The first sheet is today unless the driver picks another date; the others follow it.
+  function firstDateISO() {
+    return isoDate(new Date());
   }
 
   function defaultState() {
     return {
       ruleset: 'standard-solo',
-      startDate: yesterdayISO(),
+      startDate: firstDateISO(),
       dateChosen: false,
       driver: '',
       licence: '',
@@ -122,7 +121,9 @@
       history: { lastRestDay: '', lastRestTime: '', workSince: '', nights: {}, nightBefore: '', longRests: {} },
       showDayBefore: false,
       // How many sheets go with the work-before totals to make up 7, 14 and 28 days.
-      priorSheets: 2,
+      priorSheets: 1,
+      // Whether the driver picked the number of sheets to include, rather than the default.
+      priorChosen: false,
       // Extra sheets after the main three, 0 to 4.
       extraSheets: 0,
     };
@@ -152,7 +153,10 @@
       while (state.pages.length < PAGES) state.pages.push(blankPage());
       state.pages = state.pages.map((pg) => ({ ...blankPage(), ...pg }));
       if (!Array.isArray(state.pair) || state.pair.length !== N) state.pair = new Array(N).fill(0);
-      if (!state.dateChosen) state.startDate = yesterdayISO();
+      if (!state.dateChosen) state.startDate = firstDateISO();
+      // The default is now 1 sheet (ending today, on the first sheet). Saves that never picked
+      // a number held the old default of 2.
+      if (!state.priorChosen) state.priorSheets = 1;
       return state;
     } catch (e) {
       return null;
@@ -178,7 +182,7 @@
 
   // The date of page p. state.startDate is the first daily sheet's date (page 1).
   function pageDate(p) {
-    const [y, m, d] = (state.startDate || yesterdayISO()).split('-').map(Number);
+    const [y, m, d] = (state.startDate || firstDateISO()).split('-').map(Number);
     return new Date(y, m - 1, d + p - FIRST);
   }
 
@@ -259,11 +263,11 @@
       });
     }
 
-    watchMiddleDate($('#middle-date'));
+    watchFirstDate($('#middle-date'));
 
     confirmButton($('#example'), 'Replace entries?', () => state.slots.includes('W'), loadExample);
     confirmButton($('#clear'), 'Tap again to clear', () => true, () => {
-      // Back to a fresh start: today as the middle sheet, the time now for the plan, no day
+      // Back to a fresh start: today as the first sheet, the time now for the plan, no day
       // before, no driver details, and empty sheets.
       const fresh = defaultState();
       state.driver = '';
@@ -298,27 +302,27 @@
   }
 
   // Asks for a second tap instead of a dialog, so it also works where dialogs are blocked.
-  // The middle sheet's date can be set at the top or on the sheet itself; the other sheets are
-  // the day before and the day after. The state keeps the first sheet's date.
-  function setMiddleDate(iso) {
+  // The first sheet's date can be set at the top or on the sheet itself; the other sheets
+  // follow on from it (and the day before, when shown, is the day before it).
+  function setFirstDate(iso) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return;
-    state.startDate = addDays(iso, -1);
+    state.startDate = iso;
     state.dateChosen = iso !== isoDate(new Date());
     update(true);
   }
 
-  function watchMiddleDate(input) {
-    input.value = addDays(state.startDate, 1);
+  function watchFirstDate(input) {
+    input.value = state.startDate;
     // Some phone browsers only send "change" when the picker closes, others only "input".
     const pick = () => {
-      if (input.value && input.value !== addDays(state.startDate, 1)) setMiddleDate(input.value);
+      if (input.value && input.value !== state.startDate) setFirstDate(input.value);
     };
     input.addEventListener('input', pick);
     input.addEventListener('change', pick);
   }
 
-  function syncMiddleDate() {
-    const iso = addDays(state.startDate, 1);
+  function syncFirstDate() {
+    const iso = state.startDate;
     document.querySelectorAll('.middle-date-input').forEach((input) => {
       if (document.activeElement !== input) input.value = iso;
     });
@@ -818,17 +822,17 @@
     options.classList.add('hours-options');
     syncers.push(options.sync);
     const dateBox = box('Date', date);
-    if (p === MIDDLE) {
-      // The middle sheet's date is changeable here; the other sheets follow it.
+    if (p === FIRST) {
+      // The first sheet's date is changeable here; the other sheets follow on from it.
       const edit = el('span', 'date-edit');
       const input = el('input', 'middle-date-input meta-date');
       input.type = 'date';
-      input.setAttribute('aria-label', 'Change the date of the middle sheet');
-      watchMiddleDate(input);
+      input.setAttribute('aria-label', 'Change the date of the first sheet');
+      watchFirstDate(input);
       const today = el('button', 'date-today', 'Today');
       today.type = 'button';
       today.id = 'middle-today';
-      today.addEventListener('click', () => setMiddleDate(isoDate(new Date())));
+      today.addEventListener('click', () => setFirstDate(isoDate(new Date())));
       edit.append(input, today);
       dateBox.append(edit);
       dateBox.classList.add('meta-box-date');
@@ -1134,7 +1138,7 @@
       if (!full) return;
       s.sheet.hidden = (p < FIRST && !state.showDayBefore) || p * SLOTS_PER_DAY >= recordEnd();
       s.date.textContent = formatDate(pageDate(p), true);
-      if (p === MIDDLE) syncMiddleDate();
+      if (p === FIRST) syncFirstDate();
       s.driver.textContent = state.driver || '—';
       s.licence.textContent = state.licence || '—';
       s.sync();
@@ -1203,7 +1207,7 @@
 
     const step = (delta) => {
       const { from } = planStart();
-      const start = from >= 0 ? from : MIDDLE * SLOTS_PER_DAY;
+      const start = from >= 0 ? from : FIRST * SLOTS_PER_DAY;
       const i = Math.min(recordEnd() - 1, Math.max(FIRST * SLOTS_PER_DAY, start + delta));
       state.planFrom = { date: isoDate(pageDate(Math.floor(i / SLOTS_PER_DAY))), time: clock(i) };
       update(true);
@@ -1228,7 +1232,7 @@
       opt.value = iso;
       return opt;
     }));
-    const page = from >= FIRST * SLOTS_PER_DAY ? Math.floor(from / SLOTS_PER_DAY) : MIDDLE;
+    const page = from >= FIRST * SLOTS_PER_DAY ? Math.floor(from / SLOTS_PER_DAY) : FIRST;
     day.value = isoDate(pageDate(page));
     if (from >= 0 && document.activeElement !== time) time.value = clock(from);
     const now = $('#plan-now');
@@ -1256,7 +1260,7 @@
     const { from, custom } = planStart();
     syncPlanControls(from, custom);
     if (from < 0) {
-      lead.textContent = "Today isn't on the sheets. Pick a start day and time above, or set the middle sheet to today's date.";
+      lead.textContent = "Today isn't on the sheets. Pick a start day and time above, or set the first sheet to today's date.";
       list.replaceChildren();
       return;
     }
@@ -1677,9 +1681,9 @@
     };
 
     if (q.lastRest) {
-      // Any day from 4 weeks before the first sheet up to the middle sheet.
+      // Any day from 4 weeks before the first sheet up to the first sheet.
       const days = [['', 'Not entered']];
-      for (let p = FIRST - 27; p <= MIDDLE; p++) days.push([isoDate(pageDate(p)), formatDate(pageDate(p))]);
+      for (let p = FIRST - 27; p <= FIRST; p++) days.push([isoDate(pageDate(p)), formatDate(pageDate(p))]);
       const times = [['', '—']];
       for (let k = 0; k < SLOTS_PER_DAY; k++) times.push([clock(k), clock(k)]);
       out.push(field('When your last 24-hour rest ended', 'The end of your most recent 24 continuous hours of stationary rest before the sheets.',
@@ -1762,6 +1766,7 @@
       b.textContent = ['1 sheet', '2 sheets', '3 sheets'][k - 1];
       b.addEventListener('click', () => {
         state.priorSheets = k;
+        state.priorChosen = true;
         update(true);
       });
       return b;
