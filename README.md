@@ -1,7 +1,7 @@
 # Work Diary Checker
 
-A compliance checker for heavy vehicle drivers' work diaries. It is laid out like three daily
-sheets from the National Driver Work Diary: yesterday, today and tomorrow. Drag along the WORK row
+A compliance checker for heavy vehicle drivers' work diaries. It is laid out like daily
+sheets from the National Driver Work Diary, starting from the date you choose (today by default). Drag along the WORK row
 to mark work in 15-minute blocks and along the REST row to change it back to rest. Any breach of
 the fatigue rules shows in red with its risk category.
 
