@@ -1,6 +1,6 @@
 // Keeps the checker working offline.
 const PREFIX = 'work-diary-checker-v';
-const CACHE = `${PREFIX}33`;
+const CACHE = `${PREFIX}34`;
 const FILES = [
   './',
   'index.html',
