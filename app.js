@@ -33,10 +33,10 @@
     return state.slots.slice(0, recordEnd());
   }
   // The earlier-work totals cover the days before the sheets. With the first 1, 2 or 3 sheets
-  // on the page (the driver's choice, 2 by default) they make up the 7, 14 or 28 days. The day
+  // on the page (the driver's choice, 1 by default) they make up the 7, 14 or 28 days. The day
   // before counts as the first sheet when it is shown.
   function priorSheets() {
-    return [1, 2, 3].includes(state.priorSheets) ? state.priorSheets : 2;
+    return [1, 2, 3].includes(state.priorSheets) ? state.priorSheets : 1;
   }
 
   // The page of the first sheet counted: the day before when shown, otherwise the first sheet.
@@ -122,7 +122,9 @@
       history: { lastRestDay: '', lastRestTime: '', workSince: '', nights: {}, nightBefore: '', longRests: {} },
       showDayBefore: false,
       // How many sheets go with the work-before totals to make up 7, 14 and 28 days.
-      priorSheets: 2,
+      priorSheets: 1,
+      // Whether the driver picked the number of sheets to include, rather than the default.
+      priorChosen: false,
       // Extra sheets after the main three, 0 to 4.
       extraSheets: 0,
     };
@@ -153,6 +155,9 @@
       state.pages = state.pages.map((pg) => ({ ...blankPage(), ...pg }));
       if (!Array.isArray(state.pair) || state.pair.length !== N) state.pair = new Array(N).fill(0);
       if (!state.dateChosen) state.startDate = firstDateISO();
+      // The default is now 1 sheet (ending today, on the first sheet). Saves that never picked
+      // a number held the old default of 2.
+      if (!state.priorChosen) state.priorSheets = 1;
       return state;
     } catch (e) {
       return null;
@@ -1762,6 +1767,7 @@
       b.textContent = ['1 sheet', '2 sheets', '3 sheets'][k - 1];
       b.addEventListener('click', () => {
         state.priorSheets = k;
+        state.priorChosen = true;
         update(true);
       });
       return b;
