@@ -3,14 +3,36 @@
 
   const { RULESETS, SLOTS_PER_DAY, SLOT_MINUTES, H, check, plan, earliestStart, priorKey, describeRule, formatDuration, formatPeriod } = window.EWD;
 
-  // Four days are kept: an optional "day before" sheet (page 0), then the three daily sheets
-  // (pages 1 to 3). While the day before is hidden it is all rest, which is how time before the
-  // sheets is counted anyway.
-  const PAGES = 4;
+  // Up to eight days are kept: an optional "day before" sheet (page 0), the three main daily
+  // sheets (pages 1 to 3), and up to four extra sheets for the days after (pages 4 to 7). While
+  // the day before is hidden it is all rest, which is how time before the sheets is counted.
+  // Extra sheets that aren't in use are left out of the checks altogether.
+  const MAIN_SHEETS = 3;
+  const MAX_EXTRA = 4;
+  const PAGES = 1 + MAIN_SHEETS + MAX_EXTRA;
   const FIRST = 1;
-  const SHEETS = [1, 2, 3];
   const MIDDLE = 2;
   const N = PAGES * SLOTS_PER_DAY;
+
+  function extraSheets() {
+    const n = Number(state.extraSheets);
+    return Number.isInteger(n) && n >= 0 && n <= MAX_EXTRA ? n : 0;
+  }
+
+  // The daily sheets in use, by page: 1, 2, 3 and any extra ones.
+  function sheetPages() {
+    return Array.from({ length: MAIN_SHEETS + extraSheets() }, (_, k) => FIRST + k);
+  }
+
+  // The end of the record the checks use: the end of the last sheet in use.
+  function recordEnd() {
+    return (FIRST + MAIN_SHEETS + extraSheets()) * SLOTS_PER_DAY;
+  }
+
+  // The sheets as the checks see them: up to the end of the last sheet in use.
+  function recordSlots() {
+    return state.slots.slice(0, recordEnd());
+  }
   // The earlier-work totals cover the days before the sheets. With the first 1, 2 or 3 sheets
   // on the page (the driver's choice, 2 by default) they make up the 7, 14 or 28 days. The day
   // before counts as the first sheet when it is shown.
@@ -101,6 +123,8 @@
       showDayBefore: false,
       // How many sheets go with the work-before totals to make up 7, 14 and 28 days.
       priorSheets: 2,
+      // Extra sheets after the main three, 0 to 4.
+      extraSheets: 0,
     };
   }
 
@@ -114,6 +138,11 @@
         saved.pages = [blankPage()].concat(saved.pages || []);
         saved.changes = Object.fromEntries(Object.entries(saved.changes || {})
           .map(([i, v]) => [String(Number(i) + SLOTS_PER_DAY), v]));
+      }
+      // Saves from before the extra sheets held four days: add the four days after.
+      if (saved.slots.length === 4 * SLOTS_PER_DAY) {
+        saved.slots = saved.slots.concat(new Array(N - saved.slots.length).fill('R'));
+        if (Array.isArray(saved.pair)) saved.pair = saved.pair.concat(new Array(N - saved.pair.length).fill(0));
       }
       if (saved.slots.length !== N) return null;
       const state = { ...defaultState(), ...saved };
@@ -177,7 +206,7 @@
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const day = Math.round((today - pageDate(0)) / 86400000);
-    if (day < 0 || day >= PAGES) return -1;
+    if (day < 0 || day >= FIRST + MAIN_SHEETS + extraSheets()) return -1;
     return day * SLOTS_PER_DAY + Math.floor((now.getHours() * 60 + now.getMinutes()) / SLOT_MINUTES);
   }
 
@@ -192,6 +221,19 @@
   const sheets = [];
 
   function buildControls() {
+    // Up to four extra sheets after the main three, all checked and printed together.
+    const extra = $('#extra-sheets');
+    for (let k = 0; k <= MAX_EXTRA; k++) {
+      const opt = el('option', null, k ? `${MAIN_SHEETS + k} sheets (${k} more after the main three)` : `${MAIN_SHEETS} sheets (the main three)`);
+      opt.value = String(k);
+      extra.append(opt);
+    }
+    extra.value = String(extraSheets());
+    extra.addEventListener('change', () => {
+      state.extraSheets = Number(extra.value);
+      update(true);
+    });
+
     const select = $('#ruleset');
     for (const [id, rs] of Object.entries(RULESETS)) {
       const opt = el('option', null, rs.name);
@@ -716,7 +758,7 @@
   function buildPrintSheets() {
     const wrap = $('#print-sheets');
     if (!wrap) return;
-    const pages = state.showDayBefore ? [0, ...SHEETS] : SHEETS;
+    const pages = state.showDayBefore ? [0, ...sheetPages()] : sheetPages();
     wrap.replaceChildren(printBreaches(pages), ...pages.map(printSheet));
   }
 
@@ -1034,7 +1076,7 @@
   }
 
   function render(full) {
-    result = check(state.slots, state.ruleset, { fmtTime, prior: priorSlots(), history: historyOpts(), ...priorOpts() });
+    result = check(recordSlots(), state.ruleset, { fmtTime, prior: priorSlots(), history: historyOpts(), ...priorOpts() });
     const ruleset = RULESETS[state.ruleset];
     const breachSlots = new Map();
     result.breaches.forEach((b, n) => b.slots.forEach((i) => breachSlots.set(i, n)));
@@ -1090,7 +1132,7 @@
       s.sheet.classList.toggle('has-breach', pageBreaches.length > 0);
 
       if (!full) return;
-      s.sheet.hidden = p < FIRST && !state.showDayBefore;
+      s.sheet.hidden = (p < FIRST && !state.showDayBefore) || p * SLOTS_PER_DAY >= recordEnd();
       s.date.textContent = formatDate(pageDate(p), true);
       if (p === MIDDLE) syncMiddleDate();
       s.driver.textContent = state.driver || '—';
@@ -1134,7 +1176,7 @@
   // Where "Your next limits" starts: the day and time the driver picked, or the time now.
   function planStart() {
     if (state.planFrom) {
-      const day = SHEETS.find((p) => isoDate(pageDate(p)) === state.planFrom.date);
+      const day = sheetPages().find((p) => isoDate(pageDate(p)) === state.planFrom.date);
       const [hh, mm] = String(state.planFrom.time).split(':').map(Number);
       if (day != null && Number.isInteger(hh) && Number.isInteger(mm)) {
         return { from: day * SLOTS_PER_DAY + Math.floor((hh * 60 + mm) / SLOT_MINUTES), custom: true };
@@ -1162,7 +1204,7 @@
     const step = (delta) => {
       const { from } = planStart();
       const start = from >= 0 ? from : MIDDLE * SLOTS_PER_DAY;
-      const i = Math.min(N - 1, Math.max(FIRST * SLOTS_PER_DAY, start + delta));
+      const i = Math.min(recordEnd() - 1, Math.max(FIRST * SLOTS_PER_DAY, start + delta));
       state.planFrom = { date: isoDate(pageDate(Math.floor(i / SLOTS_PER_DAY))), time: clock(i) };
       update(true);
     };
@@ -1180,7 +1222,7 @@
     const day = $('#plan-day');
     const time = $('#plan-time');
     const todayIso = isoDate(new Date());
-    day.replaceChildren(...SHEETS.map((p) => {
+    day.replaceChildren(...sheetPages().map((p) => {
       const iso = isoDate(pageDate(p));
       const opt = el('option', null, `${formatDate(pageDate(p))}${iso === todayIso ? ' (today)' : ''}`);
       opt.value = iso;
@@ -1249,7 +1291,7 @@
       return li;
     };
 
-    let slots = state.slots;
+    let slots = recordSlots();
     let base = from;
     const opts = { prior: priorSlots(), history: historyOpts(), ...priorOpts() };
     let items = plan(slots, state.ruleset, from, opts);
@@ -1471,8 +1513,8 @@
       ul.append(...result.breaches.map(breachItem));
       parts.push(ul);
     }
-    const total = state.slots.filter((v, i) => v === 'W' && i >= FIRST * SLOTS_PER_DAY).length;
-    const facts = [`Total work across the three sheets: ${formatDuration(total)}.`];
+    const total = state.slots.filter((v, i) => v === 'W' && i >= FIRST * SLOTS_PER_DAY && i < recordEnd()).length;
+    const facts = [`Total work across the ${MAIN_SHEETS + extraSheets()} sheets: ${formatDuration(total)}.`];
     const before = state.slots.filter((v, i) => v === 'W' && i < FIRST * SLOTS_PER_DAY).length;
     if (before) facts.push(`Work on the day before: ${formatDuration(before)}.`);
     if (result.longNight.size) facts.push(`Long/night work: ${formatDuration(result.longNight.size)}.`);
