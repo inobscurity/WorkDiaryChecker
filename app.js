@@ -129,10 +129,84 @@
     };
   }
 
+  // Keeps only what the app knows, each of the right kind and size, from a save or an imported
+  // file. Anything else is dropped, so a file from anywhere can't put unexpected data in.
+  function cleanSaved(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : typeof v === 'number' && Number.isFinite(v) ? String(v).slice(0, max) : '');
+    const iso = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+    const hhmm = (v) => (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : '');
+    const oneOf = (v, items) => (items.some(([value]) => value === v) ? v : '');
+    const sizes = [3, 4, PAGES].map((d) => d * SLOTS_PER_DAY);
+    if (!RULESETS[raw.ruleset] || !Array.isArray(raw.slots) || !sizes.includes(raw.slots.length)) return null;
+    const out = {
+      ruleset: raw.ruleset,
+      startDate: iso(raw.startDate) || firstDateISO(),
+      dateChosen: raw.dateChosen === true,
+      driver: str(raw.driver, 60),
+      licence: str(raw.licence, 20),
+      slots: raw.slots.map((v) => (v === 'W' ? 'W' : 'R')),
+      pair: Array.isArray(raw.pair) && raw.pair.length === raw.slots.length ? raw.pair.map((v) => (v ? 1 : 0)) : undefined,
+      showDayBefore: raw.showDayBefore === true,
+      priorSheets: [1, 2, 3].includes(raw.priorSheets) ? raw.priorSheets : 1,
+      priorChosen: raw.priorChosen === true,
+      extraSheets: Number.isInteger(raw.extraSheets) && raw.extraSheets >= 0 && raw.extraSheets <= MAX_EXTRA ? raw.extraSheets : 0,
+      example: raw.example === true,
+    };
+    if (Array.isArray(raw.pages)) {
+      out.pages = raw.pages.slice(0, PAGES).map((pg) => {
+        const page = blankPage();
+        if (!pg || typeof pg !== 'object') return page;
+        for (const key of Object.keys(page)) page[key] = str(pg[key], 200);
+        page.zone = oneOf(page.zone, ZONES);
+        page.twoUpIssued = oneOf(page.twoUpIssued, ZONES);
+        page.twoUpOption = oneOf(page.twoUpOption, TWO_UP_OPTIONS);
+        return page;
+      });
+    }
+    out.changes = {};
+    if (raw.changes && typeof raw.changes === 'object') {
+      for (const [key, value] of Object.entries(raw.changes)) {
+        const i = Number(key);
+        if (!Number.isInteger(i) || i < 0 || i >= raw.slots.length || !value || typeof value !== 'object') continue;
+        out.changes[i] = { location: str(value.location, 60), odometer: str(value.odometer, 20) };
+      }
+    }
+    out.planFrom = raw.planFrom && iso(raw.planFrom.date) && hhmm(raw.planFrom.time)
+      ? { date: raw.planFrom.date, time: raw.planFrom.time } : null;
+    out.prior = {};
+    if (raw.prior && typeof raw.prior === 'object') {
+      for (const [key, value] of Object.entries(raw.prior)) if (/^(work|longnight)-\d{1,2}$/.test(key)) out.prior[key] = str(value, 10);
+    }
+    const h = raw.history && typeof raw.history === 'object' ? raw.history : {};
+    out.history = {
+      lastRestDay: iso(h.lastRestDay), lastRestTime: hhmm(h.lastRestTime), workSince: str(h.workSince, 10),
+      nightBefore: ['yes', 'no'].includes(h.nightBefore) ? h.nightBefore : '', nights: {}, longRests: {},
+    };
+    if (h.nights && typeof h.nights === 'object') {
+      for (const [key, value] of Object.entries(h.nights)) {
+        if (!/^night-\d{1,2}$/.test(key) || !value || typeof value !== 'object') continue;
+        out.history.nights[key] = { count: /^\d{1,2}$/.test(String(value.count)) ? String(value.count) : '', consecutive: value.consecutive === true };
+      }
+    }
+    if (h.longRests && typeof h.longRests === 'object') {
+      for (const [key, value] of Object.entries(h.longRests)) if (/^long-\d{1,2}$/.test(key) && /^\d{1,2}$/.test(String(value))) out.history.longRests[key] = String(value);
+    }
+    return out;
+  }
+
   function load() {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (!saved || !Array.isArray(saved.slots) || !RULESETS[saved.ruleset]) return null;
+      return fromSaved(cleanSaved(JSON.parse(localStorage.getItem(STORAGE_KEY))));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Brings a cleaned save up to date with the current layout of sheets.
+  function fromSaved(saved) {
+    try {
+      if (!saved) return null;
       // Saves from before the day-before sheet held three days: move them along by one.
       if (saved.slots.length === 3 * SLOTS_PER_DAY) {
         saved.slots = new Array(SLOTS_PER_DAY).fill('R').concat(saved.slots);
@@ -161,6 +235,69 @@
     } catch (e) {
       return null;
     }
+  }
+
+  // ---- Export and import --------------------------------------------------------------------
+  //
+  // Export saves everything on screen to a file; Import loads such a file back, replacing what
+  // is on screen once the driver confirms. Handy for training sheets used again and again.
+
+  const EXPORT_APP = 'Work Diary Checker';
+
+  function exportEntries() {
+    const file = { app: EXPORT_APP, format: 1, exported: new Date().toISOString(), entries: state };
+    const blob = new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' });
+    const a = el('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `work-diary-${state.startDate}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    ioStatus(`Saved as ${a.download}. Use Import to load it again.`, 'good');
+  }
+
+  function ioStatus(text, kind, actions) {
+    const box = $('#io-status');
+    box.className = `io-status ${kind || ''}`;
+    box.replaceChildren(el('span', null, text), ...(actions || []));
+    box.hidden = !text;
+  }
+
+  async function importFile(file) {
+    if (!file) return;
+    const fail = () => ioStatus(`"${file.name}" isn't a Work Diary Checker export, so nothing was changed.`, 'bad');
+    if (file.size > 2 * 1024 * 1024) return fail();
+    let parsed;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch (e) {
+      return fail();
+    }
+    const entries = parsed && parsed.app === EXPORT_APP ? fromSaved(cleanSaved({ ...parsed.entries, dateChosen: true })) : null;
+    if (!entries) return fail();
+    const yes = el('button', 'io-yes', 'Load it');
+    yes.type = 'button';
+    yes.addEventListener('click', () => {
+      state = entries;
+      save();
+      location.reload();
+    });
+    const cancel = el('button', 'io-no', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => ioStatus(''));
+    const days = 3 + (entries.extraSheets || 0);
+    ioStatus(`Load "${file.name}" (${days} sheets from ${formatDate(new Date(`${entries.startDate}T00:00`))}, ${RULESETS[entries.ruleset].name})? It replaces what's on screen.`, 'ask', [yes, cancel]);
+  }
+
+  function buildImportExport() {
+    $('#export').addEventListener('click', exportEntries);
+    const input = $('#import-file');
+    $('#import').addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      importFile(input.files[0]);
+      input.value = '';
+    });
   }
 
   function save() {
@@ -1870,6 +2007,7 @@
   }
 
   buildControls();
+  buildImportExport();
   buildPriorChoice();
   buildPlanControls();
   buildDetail();
