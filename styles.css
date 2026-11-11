@@ -126,6 +126,13 @@ input.invalid { border-color: var(--red) !important; outline: 1px solid var(--re
 .input-issues { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; background: #fff; border: 1px solid var(--red); color: var(--red); font-weight: 600; }
 @media print { .field-error, .field-warning, .input-issues { display: none; } }
 
+.io-status { flex-basis: 100%; margin: 0; padding: 8px 10px; border-radius: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.9rem; }
+.io-status.good { background: var(--green-light); color: var(--green); }
+.io-status.bad { background: var(--red-light); color: var(--red); }
+.io-status.ask { background: #fff6d6; border: 1px solid #ecd27a; }
+.io-status button { padding: 6px 12px; min-height: 36px; border-radius: 6px; border: 1px solid var(--diary); background: #fff; color: var(--diary); font-weight: 600; cursor: pointer; }
+.io-status .io-yes { background: var(--diary); color: #fff; }
+
 /* ---- Summary ---- */
 
 .summary { margin: 16px 0; padding: 14px 16px; border-radius: 8px; background: #fff; border: 1px solid var(--paper-edge); border-left-width: 6px; }
